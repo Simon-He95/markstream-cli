@@ -3,6 +3,9 @@ import type {
   BlockquoteNode,
   CodeBlockNode,
   EmphasisNode,
+  FootnoteAnchorNode,
+  FootnoteNode,
+  FootnoteReferenceNode,
   HardBreakNode,
   HeadingNode,
   HighlightNode,
@@ -16,6 +19,7 @@ import type {
   MathInlineNode,
   ParagraphNode,
   ParsedNode,
+  ReferenceNode,
   StrikethroughNode,
   StrongNode,
   TextNode,
@@ -148,6 +152,12 @@ function renderInlineNode(node: ParsedNode, ctx: RenderContext, inherited: AnsiS
       return renderHardBreak(node as HardBreakNode, ctx, inherited)
     case 'math_inline':
       return renderMathInline(node as MathInlineNode, ctx, inherited)
+    case 'footnote_reference':
+      return renderFootnoteReference(node as FootnoteReferenceNode, ctx, inherited)
+    case 'footnote_anchor':
+      return renderFootnoteAnchor(node as FootnoteAnchorNode, ctx, inherited)
+    case 'reference':
+      return renderReference(node as ReferenceNode, ctx, inherited)
     default:
       return styleText((node as any).raw ?? '', inherited, ctx)
   }
@@ -210,6 +220,18 @@ function renderMathInline(node: MathInlineNode, ctx: RenderContext, inherited: A
   return styleText(node.content, next, ctx)
 }
 
+function renderFootnoteReference(node: FootnoteReferenceNode, ctx: RenderContext, inherited: AnsiStyle) {
+  return styleText(node.raw || `[^${node.id}]`, inherited, ctx)
+}
+
+function renderFootnoteAnchor(_node: FootnoteAnchorNode, _ctx: RenderContext, _inherited: AnsiStyle) {
+  return ''
+}
+
+function renderReference(node: ReferenceNode, ctx: RenderContext, inherited: AnsiStyle) {
+  return styleText(node.raw || `[${node.id}]`, inherited, ctx)
+}
+
 function renderBlockNodes(nodes: ParsedNode[], ctx: RenderContext): string {
   let out = ''
   for (const node of nodes)
@@ -237,6 +259,8 @@ function renderBlockNode(node: ParsedNode, ctx: RenderContext): string {
       return renderMathBlock(node as MathBlockNode, ctx)
     case 'admonition':
       return renderAdmonition(node as AdmonitionNode, ctx)
+    case 'footnote':
+      return renderFootnote(node as FootnoteNode, ctx)
     default:
       return (node as any).raw ? `${(node as any).raw}\n` : ''
   }
@@ -332,6 +356,18 @@ function renderAdmonition(node: AdmonitionNode, ctx: RenderContext) {
     ? body.split('\n').map(line => `${ctx.indent}  ${styleText(line, ctx.theme.admonitionBody, ctx)}`).join('\n')
     : ''
   return `${ctx.indent}${title}\n${bodyStyled}\n\n`
+}
+
+function renderFootnote(node: FootnoteNode, ctx: RenderContext) {
+  const label = `[^${node.id}]:`
+  const body = renderBlockNodes(node.children ?? [], { ...ctx, indent: '' }).trimEnd()
+  if (!body)
+    return `${ctx.indent}${label}\n\n`
+
+  const lines = body.split('\n')
+  const first = `${ctx.indent}${label} ${lines[0]}`
+  const rest = lines.slice(1).map(line => `${ctx.indent}  ${line}`).join('\n')
+  return `${rest ? `${first}\n${rest}` : first}\n\n`
 }
 
 export function renderNodesToAnsi(nodes: ParsedNode[], options?: RenderOptions) {
