@@ -1,0 +1,127 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "test (vitest)",
+      "type": "shell",
+      "command": "pnpm",
+      "args": [
+        "test",
+        "--",
+        "-t",
+        "render all-syntax markdown"
+      ],
+      "isBackground": false,
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "test (vitest, debug)",
+      "type": "shell",
+      "command": "MARKSTREAM_TEST_DEBUG=1 pnpm",
+      "args": [
+        "test",
+        "--",
+        "-t",
+        "render all-syntax markdown"
+      ],
+      "isBackground": false,
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "test (vitest) with debug env",
+      "type": "shell",
+      "command": "env MARKSTREAM_TEST_DEBUG=1 pnpm test -- -t \"render all-syntax markdown\"",
+      "isBackground": false,
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "test all-syntax only",
+      "type": "shell",
+      "command": "pnpm",
+      "args": [
+        "test",
+        "--",
+        "-t",
+        "render all-syntax markdown"
+      ],
+      "isBackground": false,
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "test all-syntax only (rerun)",
+      "type": "shell",
+      "command": "pnpm",
+      "args": [
+        "test",
+        "--",
+        "-t",
+        "render all-syntax markdown"
+      ],
+      "isBackground": false,
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "test all",
+      "type": "shell",
+      "command": "pnpm",
+      "args": [
+        "test"
+      ],
+      "isBackground": false,
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "test all",
+      "type": "shell",
+      "command": "pnpm",
+      "args": [
+        "test"
+      ],
+      "isBackground": false,
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "test all",
+      "type": "shell",
+      "command": "pnpm",
+      "args": [
+        "test"
+      ],
+      "isBackground": false,
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "test",
+      "type": "shell",
+      "command": "pnpm",
+      "args": [
+        "vitest",
+        "run",
+        "--reporter=dot"
+      ],
+      "isBackground": false,
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "debug:image-output",
+      "type": "shell",
+      "command": "pnpm",
+      "args": [
+        "tsx",
+        "-e",
+        "import fs from 'node:fs'; import { highlightMarkdown } from './src/index.ts'; const md=fs.readFileSync(new URL('./test/fixtures/all.md', import.meta.url),'utf8'); const out=highlightMarkdown(md,{render:{color:false,width:40,streaming:true}}); const lines=out.split('\\n'); const idx=lines.findIndex(l=>l.includes('Image:')); console.log('line',idx,JSON.stringify(lines[idx])); console.log('next',JSON.stringify(lines[idx+1])); console.log('containsToken',out.includes('![Alt](https://example.com/a.png)'));"
+      ],
+      "isBackground": false,
+      "problemMatcher": []
+    }
+  ]
+}

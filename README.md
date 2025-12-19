@@ -1,4 +1,29 @@
-## Vitesse
+## markstream-cli
+
+Stream-render Markdown in a real terminal (with optional async code highlighting).
+
+## Usage
+
+One-shot streaming to terminal:
+
+```ts
+import { createShikiHighlightCode, streamMarkdownToTerminal } from 'markstream-cli'
+
+async function* chunks() {
+  yield '# Hello\n\n'
+  yield '```ts\nconst x = 1\n'
+  yield '```\n'
+}
+
+await streamMarkdownToTerminal(chunks(), {
+  terminal: { clear: true },
+  // Optional debug instrumentation:
+  // debug: { patches: true },
+  render: {
+    highlightCode: createShikiHighlightCode({ theme: 'nord' as any }),
+  },
+})
+```
 
 ## :coffee:
 

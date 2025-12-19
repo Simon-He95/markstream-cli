@@ -1,4 +1,5 @@
 import process from 'node:process'
+import { Ansis } from 'ansis'
 
 export type AnsiColor
   = | 'black'
@@ -38,38 +39,28 @@ export function mergeAnsiStyle(base: AnsiStyle, next: AnsiStyle): AnsiStyle {
   return { ...base, ...next }
 }
 
-function fgCode(color: AnsiColor) {
-  switch (color) {
-    case 'black': return 30
-    case 'red': return 31
-    case 'green': return 32
-    case 'yellow': return 33
-    case 'blue': return 34
-    case 'magenta': return 35
-    case 'cyan': return 36
-    case 'white': return 37
-    case 'gray': return 90
-  }
-}
+// Force ANSI output when `enabled === true` (even if stdout isn't a TTY),
+// while still letting the caller decide via `isColorEnabled()`.
+const forcedAnsi = new Ansis(1)
 
 export function applyAnsiStyle(text: string, style: AnsiStyle | undefined, enabled: boolean) {
   if (!enabled || !style)
     return text
 
-  const codes: number[] = []
-  if (style.bold)
-    codes.push(1)
-  if (style.dim)
-    codes.push(2)
-  if (style.italic)
-    codes.push(3)
-  if (style.underline)
-    codes.push(4)
-  if (style.fg)
-    codes.push(fgCode(style.fg))
-
-  if (codes.length === 0)
+  if (!style.fg && !style.bold && !style.dim && !style.italic && !style.underline)
     return text
 
-  return `\u001B[${codes.join(';')}m${text}\u001B[0m`
+  let chain: any = forcedAnsi
+  if (style.fg)
+    chain = chain[style.fg]
+  if (style.bold)
+    chain = chain.bold
+  if (style.dim)
+    chain = chain.dim
+  if (style.italic)
+    chain = chain.italic
+  if (style.underline)
+    chain = chain.underline
+
+  return chain(text)
 }
