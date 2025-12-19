@@ -21,6 +21,28 @@ describe('should', () => {
     expect(out).toBe('Hello World\n\nThis is bold.\n')
   })
 
+  it('render diff code block highlights added/removed lines', () => {
+    const md = [
+      '```diff',
+      'diff --git a/a.txt b/a.txt',
+      'index 0000000..1111111 100644',
+      '--- a/a.txt',
+      '+++ b/a.txt',
+      '@@ -1,2 +1,2 @@',
+      '-old',
+      '+new',
+      ' unchanged',
+      '```',
+      '',
+    ].join('\n')
+
+    const out = highlightMarkdown(md, { render: { color: true } })
+    expect(out).toContain('\u001B[')
+    expect(out).toContain('\u001B[31m-old')
+    expect(out).toContain('\u001B[32m+new')
+    expect(stripAnsi(out)).toContain('@@ -1,2 +1,2 @@')
+  })
+
   it('render complex markdown (heading/blockquote/code/footnote/reference)', () => {
     const md = fs.readFileSync(new URL('./fixtures/complex.md', import.meta.url), 'utf8')
     const out = highlightMarkdown(md, { render: { color: false, width: 40 } })
@@ -343,6 +365,11 @@ describe('should', () => {
     expect(out).toContain('Autolinks')
     expect(out).toContain('https://openai.com')
     expect(out).toContain('test@example.com')
+
+    expect(out).toContain('Diff')
+    expect(out).toContain('```diff')
+    expect(out).toContain('+new line')
+    expect(out).toContain('-old line')
 
     expect(out).toContain('HTML block')
     expect(out).toContain('Block HTML')

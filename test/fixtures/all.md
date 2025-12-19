@@ -112,6 +112,19 @@ const x = 1
 console.log(x)
 ```
 
+## Diff
+
+```diff
+diff --git a/a.txt b/a.txt
+index 0000000..1111111 100644
+--- a/a.txt
++++ b/a.txt
+@@ -1,2 +1,2 @@
+-old line
++new line
+ unchanged
+```
+
 ```mermaid
 graph TD
   A-->B

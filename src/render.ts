@@ -53,6 +53,10 @@ export interface RenderTheme {
   math: AnsiStyle
   admonitionTitle: AnsiStyle
   admonitionBody: AnsiStyle
+  diffHunk: AnsiStyle
+  diffAdded: AnsiStyle
+  diffRemoved: AnsiStyle
+  diffMeta: AnsiStyle
 }
 
 export interface RenderOptions {
@@ -115,6 +119,10 @@ const defaultTheme: RenderTheme = {
   math: { fg: 'magenta' },
   admonitionTitle: { fg: 'yellow', bold: true },
   admonitionBody: {},
+  diffHunk: { fg: 'cyan', bold: true },
+  diffAdded: { fg: 'green' },
+  diffRemoved: { fg: 'red' },
+  diffMeta: { fg: 'gray' },
 }
 
 function resolveTheme(theme: RenderOptions['theme']): RenderTheme {
@@ -425,9 +433,14 @@ function renderBlockquote(node: BlockquoteNode, ctx: RenderContext) {
 }
 
 function renderCodeBlock(node: CodeBlockNode, ctx: RenderContext) {
-  const label = node.language ? `\`\`\`${node.language}` : '```'
+  const language = node.language ?? ''
+  const isDiff = Boolean((node as any).diff) || language === 'diff' || language === 'patch'
+  const displayLanguage = language || (isDiff ? 'diff' : '')
+
+  const label = displayLanguage ? `\`\`\`${displayLanguage}` : '```'
   const fence = styleText(label, ctx.theme.codeBlockFence, ctx)
-  const code = (node.code ?? '').replace(/\n$/, '')
+  const codeRaw = (isDiff && typeof (node as any).raw === 'string') ? String((node as any).raw) : String(node.code ?? '')
+  const code = codeRaw.replace(/\n$/, '')
 
   const isStreamingLoading = Boolean(node.loading) && ctx.streaming && ctx.streamingLoadingCodeBlock === node
   if (isStreamingLoading) {
@@ -441,25 +454,30 @@ function renderCodeBlock(node: CodeBlockNode, ctx: RenderContext) {
   }
 
   const close = styleText('```', ctx.theme.codeBlockFence, ctx)
-  const body = renderCodeBlockBody(code, node.language ?? '', ctx, !isStreamingLoading)
+  const body = renderCodeBlockBody(code, displayLanguage, node, ctx, !isStreamingLoading)
   return body
     ? `${ctx.indent}${fence}\n${body}\n${ctx.indent}${close}\n\n`
     : `${ctx.indent}${fence}\n${ctx.indent}${close}\n\n`
 }
 
-function renderCodeBlockBody(code: string, language: string, ctx: RenderContext, allowHighlight: boolean) {
+function renderCodeBlockBody(code: string, language: string, node: CodeBlockNode, ctx: RenderContext, allowHighlight: boolean) {
+  const isDiff = Boolean((node as any).diff) || language === 'diff' || language === 'patch'
+
   if (allowHighlight && ctx.highlightCode) {
     const highlighted = ctx.highlightCode(code, language)
     if (highlighted instanceof Promise)
-      return renderPlainCode(code, ctx)
+      return isDiff ? renderDiffCode(code, ctx) : renderPlainCode(code, ctx)
 
     const normalized = highlighted?.replace(/\n$/, '')
     if (normalized == null)
-      return renderPlainCode(code, ctx)
+      return isDiff ? renderDiffCode(code, ctx) : renderPlainCode(code, ctx)
     if (!normalized)
       return ''
     return normalized.split('\n').map(line => `${ctx.indent}${line}`).join('\n')
   }
+
+  if (isDiff)
+    return renderDiffCode(code, ctx)
 
   return renderPlainCode(code, ctx)
 }
@@ -470,6 +488,27 @@ function renderPlainCode(code: string, ctx: RenderContext) {
   return code
     .split('\n')
     .map(line => `${ctx.indent}${styleText(line, ctx.theme.codeBlockText, ctx)}`)
+    .join('\n')
+}
+
+function renderDiffCode(code: string, ctx: RenderContext) {
+  if (!code)
+    return ''
+
+  return code
+    .split('\n')
+    .map((line) => {
+      let style = ctx.theme.codeBlockText
+      if (line.startsWith('@@'))
+        style = ctx.theme.diffHunk
+      else if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ') || line.startsWith('index '))
+        style = ctx.theme.diffMeta
+      else if (line.startsWith('+'))
+        style = ctx.theme.diffAdded
+      else if (line.startsWith('-'))
+        style = ctx.theme.diffRemoved
+      return `${ctx.indent}${styleText(line, style, ctx)}`
+    })
     .join('\n')
 }
 
