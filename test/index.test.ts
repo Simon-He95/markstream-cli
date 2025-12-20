@@ -294,7 +294,7 @@ describe('should', () => {
       },
     }
 
-    const md = '# UNIQUE_FINAL_ONLY_TEST\n\nline 1\nline 2\n'
+    const md = ['# UNIQUE_FINAL_ONLY_TEST', '', 'line 1', 'line 2', ''].join('\n')
 
     async function* chunks() {
       for (let i = 0; i < md.length; i += 5)
@@ -306,21 +306,63 @@ describe('should', () => {
       requireTTY: false,
       startOnNewLine: true,
       finalOnly: true,
+      render: { color: false, width: 80 },
+    })
+
+    const out = written.join('')
+
+    // Default finalOnly mode is in-place streaming (no alt-screen), to avoid
+    // terminals that dump alternate screen output into scrollback.
+    expect(out).not.toContain(ansi.altScreenEnter)
+    expect(out).not.toContain(ansi.altScreenExit)
+
+    // Streaming patches should avoid real \n (we replace them with cursor moves).
+    const expectedFinal = highlightMarkdown(md, { render: { color: false, width: 80 } })
+    const expectedNewlines = (expectedFinal.match(/\n/g) ?? []).length + 1 // startOnNewLine
+    expect((out.match(/\n/g) ?? []).length).toBe(expectedNewlines)
+
+    // Final output is printed at the end (with real newlines).
+    expect(out).toContain('UNIQUE_FINAL_ONLY_TEST\n')
+  })
+
+  it('streamMarkdownToTerminal: loadingIndicator shows during streaming but not in final output', async () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: true,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    async function* chunks() {
+      yield '# LOADING_TEST\n\n'
+      // Keep the stream open briefly so the indicator can tick at least once in real time.
+      await new Promise<void>(resolve => setTimeout(resolve, 50))
+      yield 'done\n'
+    }
+
+    await streamMarkdownToTerminal(chunks(), {
+      terminal: { stream, clear: false },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: true,
+      loadingIndicator: {
+        text: 'TEST_LOADING',
+        frames: ['1', '2'],
+        intervalMs: 10,
+      },
       render: { color: false },
     })
 
     const out = written.join('')
-    const enter = out.indexOf(ansi.altScreenEnter)
-    const exit = out.indexOf(ansi.altScreenExit)
-    expect(enter).toBeGreaterThanOrEqual(0)
-    expect(exit).toBeGreaterThan(enter)
+    expect(out).toContain('TEST_LOADING')
 
-    const between = out.slice(enter + ansi.altScreenEnter.length, exit)
-    expect(between.includes('\n')).toBe(false)
-
-    const after = out.slice(exit + ansi.altScreenExit.length)
-    expect(after).toContain('UNIQUE_FINAL_ONLY_TEST')
-    expect((after.match(/UNIQUE_FINAL_ONLY_TEST/g) ?? []).length).toBe(1)
+    // Spinner writes happen without real newlines; the final output contains real newlines.
+    const finalStart = out.lastIndexOf('LOADING_TEST\n')
+    expect(finalStart).toBeGreaterThanOrEqual(0)
+    const finalOut = out.slice(finalStart)
+    expect(finalOut).toContain('LOADING_TEST')
+    expect(finalOut).not.toContain('TEST_LOADING')
   })
 
   it('render all-syntax markdown (math/mermaid/etc)', () => {

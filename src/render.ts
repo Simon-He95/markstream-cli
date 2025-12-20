@@ -28,8 +28,9 @@ import type {
   TextNode,
   ThematicBreakNode,
 } from 'stream-markdown-parser'
+import type { AnsiStyle, ColorMode } from './ansi'
 import { visibleCellWidth } from 'markstream-terminal'
-import { type AnsiStyle, applyAnsiStyle, type ColorMode, isColorEnabled, mergeAnsiStyle } from './ansi'
+import { applyAnsiStyle, isColorEnabled, mergeAnsiStyle } from './ansi'
 import { findStreamingLoadingCodeBlock } from './markdown-node-utils'
 
 export interface RenderTheme {

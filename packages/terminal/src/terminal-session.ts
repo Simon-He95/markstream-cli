@@ -89,7 +89,6 @@ export function createTerminalSession(options: TerminalSessionOptions = {}): Ter
       writeRaw(`${ansi.syncEnd}${ansi.showCursor}`)
       if (altScreen)
         writeRaw(ansi.altScreenExit)
-      writeRaw(ansi.saveCursor)
     },
     writeRaw,
     setText(text: string) {

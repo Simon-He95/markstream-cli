@@ -2,7 +2,7 @@ import type { TerminalSession, TerminalSessionOptions } from 'markstream-termina
 import type { RenderOptions } from './render'
 import type { MarkdownStreamRenderer, MarkdownStreamRendererOptions } from './stream'
 import process from 'node:process'
-import { ansi, createTerminalSession } from 'markstream-terminal'
+import { ansi, createTerminalSession, visibleCellWidth } from 'markstream-terminal'
 import { createMarkdownStreamRenderer } from './stream'
 
 function isTerminalSession(x: any): x is TerminalSession {
@@ -38,6 +38,24 @@ interface TerminalStreamingPolicy {
   strategy: 'smart' | 'redraw'
 }
 
+export interface LoadingIndicatorOptions {
+  /**
+   * Spinner frames (rotated in order).
+   * @default ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏']
+   */
+  frames?: string[]
+  /**
+   * Interval between frames.
+   * @default 80
+   */
+  intervalMs?: number
+  /**
+   * Text shown next to the spinner.
+   * @default 'Loading...'
+   */
+  text?: string
+}
+
 export interface TerminalMarkdownStreamOptions extends Omit<MarkdownStreamRendererOptions, 'onPatch' | 'render'> {
   terminal?: TerminalSession | TerminalSessionOptions
   /**
@@ -48,6 +66,13 @@ export interface TerminalMarkdownStreamOptions extends Omit<MarkdownStreamRender
    * @default true
    */
   finalOnly?: boolean
+  /**
+   * Streaming policy for `finalOnly` when output is a TTY:
+   * - `inPlace`: stream on the normal screen using cursor movements (avoids alt-screen dump gaps)
+   * - `altScreen`: stream inside the alternate screen buffer (full-screen experience)
+   * @default 'inPlace'
+   */
+  finalOnlyMode?: 'inPlace' | 'altScreen'
   /**
    * Wrap patch writes in terminal synchronized updates.
    * @default true
@@ -78,6 +103,24 @@ export interface TerminalMarkdownStreamOptions extends Omit<MarkdownStreamRender
    * Prefer controlling this via options (avoid env-coupling in library code).
    */
   debug?: boolean | { patches?: boolean, logger?: (msg: string) => void }
+  /**
+   * Show a bottom loading spinner while streaming (TTY + finalOnly recommended).
+   * The spinner is not included in the final rendered output.
+   *
+   * When enabled with `finalOnly` + TTY and a streaming viewport height, one row
+   * is reserved for the indicator.
+   */
+  loadingIndicator?: boolean | LoadingIndicatorOptions
+  /**
+   * How to print the final render back to the normal screen when `finalOnly`
+   * is enabled and we streamed inside the alternate screen buffer.
+   *
+   * - `append`: keep the previous screen visible; print below the prompt
+   * - `clearScreen`: clear the visible screen (does not clear scrollback) and print from top
+   * - `auto`: choose `clearScreen` when output likely exceeds viewport
+   * @default 'clearScreen'
+   */
+  finalOutput?: 'append' | 'clearScreen' | 'auto'
   render?: RenderOptions
 }
 
@@ -127,18 +170,18 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
 
     // Avoid emitting TTY-only control sequences into non-TTY streams (pipes/files).
     //
-    // In `finalOnly` mode, the only robust way to prevent intermediate frames
-    // from polluting scrollback is to stream inside the alternate screen buffer.
-    // Some terminals optionally "dump" the alternate buffer into scrollback on
-    // exit; we handle that by clearing it before leaving.
-    const useAltScreenForStreaming = Boolean(finalOnly) && isTTY
-    // Some terminals can still save alternate-screen output to scrollback.
-    // Avoid emitting real linefeeds during streaming to prevent repeated frames
-    // from appearing as duplicated history.
+    // Some terminals "dump" alternate-screen output into scrollback, which can
+    // create a huge blank gap after the command. Default to in-place streaming
+    // on the normal screen to avoid that class of issues.
+    const finalOnlyMode = options.finalOnlyMode ?? 'inPlace'
+    const useAltScreenForStreaming = Boolean(finalOnly) && isTTY && finalOnlyMode === 'altScreen'
+
+    // Avoid emitting real linefeeds during streaming so intermediate frames don't
+    // scroll and pollute history (works for both in-place and alt-screen modes).
     const noScrollDuringStreaming = Boolean(finalOnly) && isTTY
 
     const strategy = options.strategy ?? ((finalOnly && isTTY) ? 'redraw' : 'smart')
-    const anchor = (finalOnly && isTTY) ? 'home' : (options.anchor ?? 'cursor')
+    const anchor = options.anchor ?? (useAltScreenForStreaming ? 'home' : 'cursor')
 
     policy = {
       isTTY,
@@ -189,6 +232,9 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
     // into cursor movements so intermediate frames don't scroll.
     if (policy.noScrollDuringStreaming) {
       patch = patch.replaceAll('\n', `${ansi.carriageReturn}${ansi.cursorDown(1)}`)
+      // Prevent the terminal from auto-scrolling to a cursor position that
+      // drifts downward across frames (can look like huge blank gaps).
+      patch += (policy.anchor === 'home' ? ansi.cursorHome : ansi.restoreCursor)
     }
     const lfAfter = countChar(patch, '\n')
     patchLfAfter += lfAfter
@@ -213,13 +259,134 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
     return resolved
   }
 
+  const loadingOpt = options.loadingIndicator
+  const defaultLoadingEnabled = finalOnly && policy.isTTY
+  const loadingEnabledRequested = (typeof loadingOpt === 'boolean')
+    ? loadingOpt
+    : (loadingOpt != null || defaultLoadingEnabled)
+
+  // Only enable the spinner when we can reliably position it without clobbering
+  // cursor save/restore state (home anchor avoids conflicts).
+  let loadingEnabled = Boolean(loadingEnabledRequested)
+    && finalOnly
+    && policy.isTTY
+    && typeof policy.viewportHeight === 'number'
+    && policy.viewportHeight >= 2
+
+  const loadingFrames = (typeof loadingOpt === 'object' && loadingOpt.frames?.length)
+    ? loadingOpt.frames
+    : ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+  const loadingIntervalMs = (typeof loadingOpt === 'object' && typeof loadingOpt.intervalMs === 'number')
+    ? Math.max(16, loadingOpt.intervalMs)
+    : 80
+  const loadingText = (typeof loadingOpt === 'object' && typeof loadingOpt.text === 'string')
+    ? loadingOpt.text
+    : 'Loading...'
+
+  const totalViewportHeight = policy.viewportHeight
+  const contentViewportHeight = (loadingEnabled && typeof totalViewportHeight === 'number')
+    ? Math.max(1, totalViewportHeight - 1)
+    : totalViewportHeight
+
+  // If we can't reserve a line, disable the indicator.
+  if (loadingEnabled && typeof contentViewportHeight === 'number' && contentViewportHeight < 1)
+    loadingEnabled = false
+
+  const loadingLine = (loadingEnabled && typeof totalViewportHeight === 'number')
+    ? totalViewportHeight
+    : null
+
+  let loadingFrameIndex = 0
+  let loadingTimer: any | undefined
+  let hasAnchoredOutput = false
+
+  function truncateToCells(text: string, maxCells: number) {
+    if (!Number.isFinite(maxCells) || maxCells <= 0)
+      return ''
+    if (visibleCellWidth(text) <= maxCells)
+      return text
+
+    let out = ''
+    let width = 0
+    for (let i = 0; i < text.length; i++) {
+      const cp = text.codePointAt(i)!
+      // Best-effort: treat common wide ranges as 2 (reuse terminal's util by measuring progressively).
+      // This keeps us dependency-free here while still avoiding wraps.
+      const next = out + String.fromCodePoint(cp)
+      const nextWidth = visibleCellWidth(next)
+      if (nextWidth > maxCells)
+        break
+      out = next
+      width = nextWidth
+      if (cp > 0xFFFF)
+        i++
+    }
+    return out
+  }
+
+  function renderLoadingPatch() {
+    if (!loadingEnabled || !loadingLine)
+      return ''
+
+    const width = resolveWidth()
+    const frame = loadingFrames[loadingFrameIndex % loadingFrames.length] ?? ''
+    const raw = `${frame} ${loadingText}`
+    const lineText = typeof width === 'number' ? truncateToCells(raw, Math.max(1, width)) : raw
+
+    const down = Math.max(0, loadingLine - 1)
+    const base = policy.anchor === 'home' ? ansi.cursorHome : ansi.restoreCursor
+    return `${base}${down > 0 ? ansi.cursorDown(down) : ''}${ansi.carriageReturn}${lineText}${ansi.eraseLineToEnd}`
+  }
+
+  function writeLoadingFrame() {
+    if (!loadingEnabled)
+      return
+    if (policy.anchor === 'cursor' && !hasAnchoredOutput)
+      return
+    writePatch(renderLoadingPatch())
+  }
+
+  function startLoading() {
+    if (!loadingEnabled || loadingTimer)
+      return
+
+    // Show immediately.
+    writeLoadingFrame()
+
+    loadingTimer = setInterval(() => {
+      loadingFrameIndex += 1
+      writeLoadingFrame()
+    }, loadingIntervalMs)
+
+    // Don't keep the process alive just for the animation (important for tests).
+    loadingTimer?.unref?.()
+  }
+
+  function stopLoading() {
+    if (!loadingTimer)
+      return
+    clearInterval(loadingTimer)
+    loadingTimer = undefined
+  }
+
+  // The loading indicator paints outside the markdown surface, so we must avoid
+  // append-only patches that depend on the current cursor position.
+  const rendererStrategy = (policy.noScrollDuringStreaming || loadingEnabled) ? 'redraw' : policy.strategy
+
   const renderer = createMarkdownStreamRenderer({
     ...options,
-    strategy: policy.strategy,
-    viewportHeight: policy.viewportHeight,
+    strategy: rendererStrategy,
+    viewportHeight: contentViewportHeight,
     anchor: policy.anchor,
     render,
-    onPatch: writePatch,
+    onPatch: (p) => {
+      if (p)
+        hasAnchoredOutput = true
+      writePatch(p)
+      // `setText()` ends with erase-to-end, which can wipe the indicator region.
+      // Repaint after each renderer patch.
+      writeLoadingFrame()
+    },
   })
 
   return {
@@ -228,14 +395,17 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
     start() {
       term.start()
       if (debugEnabled) {
-        debugLog(`[markstream] start finalOnly=${finalOnly} tty=${policy.isTTY} altScreen=${policy.useAltScreenForStreaming} noScroll=${policy.noScrollDuringStreaming} viewportHeight=${policy.viewportHeight ?? 'none'} anchor=${policy.anchor} strategy=${policy.strategy}`)
+        debugLog(`[markstream] start finalOnly=${finalOnly} tty=${policy.isTTY} altScreen=${policy.useAltScreenForStreaming} noScroll=${policy.noScrollDuringStreaming} viewportHeight=${policy.viewportHeight ?? 'none'} contentViewportHeight=${contentViewportHeight ?? 'none'} anchor=${policy.anchor} strategy=${rendererStrategy} loading=${loadingEnabled}`)
       }
       // `startOnNewLine` is meant to avoid overwriting prompts. When using the
       // alternate screen buffer, it isn't necessary and just wastes a line.
       if (startOnNewLine && !policy.useAltScreenForStreaming)
         term.writeRaw('\n')
+
+      startLoading()
     },
     stop() {
+      stopLoading()
       const finalRendered = finalOnly ? renderer.getFullRenderedText() : ''
 
       // In final-only mode, rewrite the anchored region with the final render
@@ -248,19 +418,30 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
         return
       }
 
-      // If streaming inside the alternate screen buffer, clear it right before
-      // exiting. This prevents terminals that "dump" the alternate buffer into
-      // scrollback from preserving intermediate frames.
-      if (finalOnly && policy.useAltScreenForStreaming)
-        term.writeRaw(`${ansi.clearScreen}${ansi.cursorHome}${ansi.eraseScrollback ?? ''}`)
+      // Note: do not clear the alternate screen right before exit.
+      // Some terminals may snapshot the alternate buffer into scrollback on exit;
+      // clearing here would result in a huge blank gap in the normal screen.
 
       term.stop()
       // If the caller explicitly enabled alternate screen, print the final
       // result back on the normal screen after exiting.
       if (finalRendered && policy.useAltScreenForStreaming) {
-        if (startOnNewLine)
-          term.writeRaw('\n')
-        term.writeRaw(finalRendered.endsWith('\n') ? finalRendered : `${finalRendered}\n`)
+        const normalized = finalRendered.endsWith('\n') ? finalRendered : `${finalRendered}\n`
+        const rows = Math.max(0, Number((process.stdout as any)?.rows ?? 0)) || 24
+        const lines = countChar(normalized, '\n')
+        const configured = options.finalOutput ?? 'auto'
+        const mode = configured === 'auto'
+          ? 'clearScreen'
+          : configured
+
+        if (mode === 'clearScreen') {
+          term.writeRaw(`${ansi.clearScreen}${ansi.cursorHome}${normalized}`)
+        }
+        else {
+          if (startOnNewLine)
+            term.writeRaw('\n')
+          term.writeRaw(normalized)
+        }
       }
 
       if (debugEnabled) {
@@ -272,12 +453,17 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
       if (typeof width === 'number')
         render.width = width
 
-      writePatch(renderer.push(chunk))
+      const patch = renderer.push(chunk)
+      if (patch)
+        hasAnchoredOutput = true
+      writePatch(patch)
+      writeLoadingFrame()
     },
     async flush() {
       const patches = await renderer.flush()
       for (const p of patches)
         writePatch(p)
+      writeLoadingFrame()
     },
     reset() {
       renderer.reset()

@@ -29,9 +29,13 @@ async function main() {
     }
   }
 
+  const clear = (process.env.MARKSTREAM_CLEAR ?? '0') !== '0'
+  const finalOnlyMode = (process.env.MARKSTREAM_FINAL_ONLY_MODE as any) || undefined
+
   await streamMarkdownToTerminal(chunks(), {
-    terminal: { clear: true },
+    terminal: { clear },
     finalOnly,
+    finalOnlyMode,
     debug: debug ? { patches: debugPatches } : undefined,
     render: {
       color: true,
