@@ -307,7 +307,6 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
       return text
 
     let out = ''
-    let width = 0
     for (let i = 0; i < text.length; i++) {
       const cp = text.codePointAt(i)!
       // Best-effort: treat common wide ranges as 2 (reuse terminal's util by measuring progressively).
@@ -317,7 +316,6 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
       if (nextWidth > maxCells)
         break
       out = next
-      width = nextWidth
       if (cp > 0xFFFF)
         i++
     }
@@ -427,8 +425,6 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
       // result back on the normal screen after exiting.
       if (finalRendered && policy.useAltScreenForStreaming) {
         const normalized = finalRendered.endsWith('\n') ? finalRendered : `${finalRendered}\n`
-        const rows = Math.max(0, Number((process.stdout as any)?.rows ?? 0)) || 24
-        const lines = countChar(normalized, '\n')
         const configured = options.finalOutput ?? 'auto'
         const mode = configured === 'auto'
           ? 'clearScreen'
