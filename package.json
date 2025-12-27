@@ -60,7 +60,7 @@
     "ansis": "^4.2.0",
     "markstream-terminal": "workspace:^",
     "shiki": "^3.20.0",
-    "stream-markdown-parser": "^0.0.44"
+    "stream-markdown-parser": "^0.0.51"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^4.19.0",

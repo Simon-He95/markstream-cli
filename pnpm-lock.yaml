@@ -21,8 +21,8 @@ importers:
         specifier: ^3.20.0
         version: 3.20.0
       stream-markdown-parser:
-        specifier: ^0.0.44
-        version: 0.0.44
+        specifier: ^0.0.51
+        version: 0.0.51
     devDependencies:
       '@antfu/eslint-config':
         specifier: ^4.19.0
@@ -2466,8 +2466,8 @@ packages:
   spdx-license-ids@3.0.7:
     resolution: {integrity: sha512-U+MTEOO0AiDzxwFvoa4JVnMV6mZlJKk2sBLt90s7G0Gd0Mlknc7kxEn3nuDPNZRta7O2uy8oLcZLVT+4sqNZHQ==}
 
-  stream-markdown-parser@0.0.44:
-    resolution: {integrity: sha512-+x/8nE4g2/PjZ8SY9bSNpv5CfrTA4YG/kdJDN7R0MTYrSDb1O+OLQdaBixZPB7ydt5whTln1+IBW83xBtXfN8Q==}
+  stream-markdown-parser@0.0.51:
+    resolution: {integrity: sha512-GJGn6OZ5G8ArnFoV7sWE8FUUe8vOFjCZ2x1ZVMQ1Yw5K6J96Td62JMAnjvVkcj8I3tNdj7Gpcxf9RskDOR2JiA==}
 
   string-argv@0.3.1:
     resolution: {integrity: sha512-a1uQGz7IyVy9YwhqjZIZu1c8JO8dNIe20xBmSS6qu9kv++k3JGzCVmprbNN5Kn+BgzD5E7YYwg1CcjuJMRNsvg==}
@@ -5229,7 +5229,7 @@ snapshots:
 
   spdx-license-ids@3.0.7: {}
 
-  stream-markdown-parser@0.0.44:
+  stream-markdown-parser@0.0.51:
     dependencies:
       markdown-it-container: 4.0.0
       markdown-it-footnote: 4.0.0
