@@ -124,6 +124,20 @@ describe('should', () => {
     expect(step2).toBe('\u001B8\u001B[u```ts\u001B[K\n<<CONST X = 1>>\u001B[K\n```\u001B[K\n\u001B[J')
   })
 
+  it('streaming: strong renders after closing **', () => {
+    const r = createMarkdownStreamRenderer({
+      strategy: 'redraw',
+      render: { color: false },
+    })
+
+    for (const ch of 'This is a demo of **streaming** markdown.\n')
+      r.push(ch)
+
+    const rendered = r.getRenderedText()
+    expect(rendered).toContain('This is a demo of streaming markdown.\n')
+    expect(rendered).not.toContain('**streaming**')
+  })
+
   it('streaming: async highlight replaces later (in-place rewrite)', async () => {
     const r = createMarkdownStreamRenderer({
       render: {

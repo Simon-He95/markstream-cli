@@ -1,6 +1,6 @@
 import process from 'node:process'
 import { codeToANSI } from '../src/code-to-ansi'
-import { createMarkdownStreamRenderer, createTerminalSession } from '../src/index'
+import { ansi, createMarkdownStreamRenderer, createTerminalSession } from '../src/index'
 
 function sleep(ms: number) {
   return new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -14,9 +14,17 @@ async function main() {
   }
 
   const term = createTerminalSession({ clear: true })
+
+  function writePatch(patch: string) {
+    if (!patch)
+      return
+    term.writeRaw(`${ansi.syncStart}${patch}${ansi.syncEnd}`)
+  }
+
   const r = createMarkdownStreamRenderer({
-    strategy: 'redraw',
-    onPatch: patch => term.writeRaw(patch),
+    anchor: 'home',
+    strategy: 'smart',
+    onPatch: writePatch,
     render: {
       color: true,
       highlightCode: async (code, language) => {
@@ -29,15 +37,15 @@ async function main() {
   term.start()
   try {
     for (const ch of '# Demo Stream\n\nThis is a demo of **streaming** markdown rendering to the terminal.\n\nStreaming demo: code becomes highlighted after closing fence.\n\n'.split('')) {
-      term.append(ch)
+      writePatch(r.push(ch))
       await sleep(20)
     }
 
-    term.writeRaw(r.push('```ts\nconst x = 1\n'))
+    writePatch(r.push('```ts\nconst x = 1\n'))
 
     await sleep(900)
 
-    term.writeRaw(r.push('```'))
+    writePatch(r.push('```'))
 
     await r.flush()
     await sleep(900)
