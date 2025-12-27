@@ -61,6 +61,18 @@ describe('should', () => {
     expect(out.endsWith('\n')).toBe(true)
   })
 
+  it('render: indented code block keeps ``` as literal text', () => {
+    const md = [
+      '    ```ts',
+      '    const x = 1',
+      '    ```',
+      '',
+    ].join('\n')
+
+    const out = highlightMarkdown(md, { render: { color: false } })
+    expect(out).toBe('```\n```ts\nconst x = 1\n```\n```\n')
+  })
+
   it('streaming: partial fenced code block renders (loading)', () => {
     const samples = [
       '```',

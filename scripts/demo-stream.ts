@@ -36,19 +36,22 @@ async function main() {
 
   term.start()
   try {
-    for (const ch of '# Demo Stream\n\nThis is a demo of **streaming** markdown rendering to the terminal.\n\nStreaming demo: code becomes highlighted after closing fence.\n\n'.split('')) {
+    const content = [
+      '# Demo Stream',
+      '',
+      'This is a demo of **streaming** markdown rendering to the terminal.',
+      '',
+      'Streaming demo: code becomes highlighted after closing fence.',
+      '',
+      '```ts',
+      'const x = 1',
+      '```',
+      '',
+    ].join('\n')
+    for (const ch of content) {
       writePatch(r.push(ch))
-      await sleep(20)
+      await sleep(10)
     }
-
-    writePatch(r.push('```ts\nconst x = 1\n'))
-
-    await sleep(900)
-
-    writePatch(r.push('```'))
-
-    await r.flush()
-    await sleep(900)
 
     term.writeRaw('\nDone.\n')
   }
