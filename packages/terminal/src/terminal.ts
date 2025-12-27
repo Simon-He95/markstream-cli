@@ -271,7 +271,7 @@ function withEraseLineToEnd(rendered: string) {
 export function createAnchoredTextSurface(initialText?: string): ReturnType<typeof _createAnchoredTextSurface>
 export function createAnchoredTextSurface(options?: AnchoredTextSurfaceOptions): ReturnType<typeof _createAnchoredTextSurface>
 export function createAnchoredTextSurface(arg: string | AnchoredTextSurfaceOptions = '') {
-  const options = typeof arg === 'string' ? ({ initialText: arg } satisfies AnchoredTextSurfaceOptions) : (arg ?? {})
+  const options: AnchoredTextSurfaceOptions = typeof arg === 'string' ? { initialText: arg } : (arg ?? {})
   return _createAnchoredTextSurface(options)
 }
 
