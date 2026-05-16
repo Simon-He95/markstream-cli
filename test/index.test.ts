@@ -455,6 +455,36 @@ describe('should', () => {
     expect(out).toContain('<<CONST X = 1>>')
   })
 
+  it('streamMarkdownToTerminal: async highlight patch is written once', async () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: true,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    async function* chunks() {
+      yield '```ts\nconst x = 1\n'
+      yield '```\n'
+    }
+
+    await streamMarkdownToTerminal(chunks(), {
+      terminal: { stream },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: false,
+      render: {
+        color: false,
+        highlightCode: async code => `<<${code.toUpperCase()}>>`,
+      },
+    })
+
+    const out = written.join('')
+    const matches = out.match(/<<CONST X = 1>>/g) ?? []
+    expect(matches).toHaveLength(1)
+  })
+
   it('streamMarkdownToTerminal: finalOnly avoids streaming linefeeds', async () => {
     const written: string[] = []
     const stream = {

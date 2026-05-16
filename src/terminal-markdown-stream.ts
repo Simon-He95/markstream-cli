@@ -456,9 +456,7 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
       writeLoadingFrame()
     },
     async flush() {
-      const patches = await renderer.flush()
-      for (const p of patches)
-        writePatch(p)
+      await renderer.flush()
       writeLoadingFrame()
     },
     reset() {
