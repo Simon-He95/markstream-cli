@@ -44,9 +44,10 @@ function parseArgs(args) {
       options.finalOnly = true
     }
     else if (arg === '--theme') {
-      options.theme = args[++i]
-      if (!options.theme)
+      const raw = args[++i]
+      if (!raw || raw.startsWith('-'))
         return fail('Missing value for --theme')
+      options.theme = raw
     }
     else if (arg === '--width') {
       const raw = args[++i]

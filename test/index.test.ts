@@ -1,6 +1,10 @@
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { ansi, createMarkdownStreamRenderer, highlightMarkdown, highlightMarkdownAsync, parseMarkdown, streamMarkdownToTerminal, stripAnsi } from '../src/index'
+
+const cliPath = fileURLToPath(new URL('../cli.mjs', import.meta.url))
 
 function stripTerminalControlSequences(s: string) {
   // Keep visible text + newlines so we can compare against non-terminal renders.
@@ -18,6 +22,20 @@ function deferred<T>() {
 }
 
 describe('should', () => {
+  it('cli rejects invalid options before rendering', () => {
+    for (const { args, message } of [
+      { args: ['--theme'], message: 'Missing value for --theme' },
+      { args: ['--theme', '--no-color'], message: 'Missing value for --theme' },
+      { args: ['--width', 'abc'], message: 'Missing valid positive integer for --width' },
+      { args: ['--unknown'], message: 'Unknown option: --unknown' },
+    ]) {
+      const result = spawnSync(process.execPath, [cliPath, ...args], { encoding: 'utf8' })
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain(message)
+    }
+  })
+
   it('parse markdown to nodes', () => {
     const nodes = parseMarkdown('# Hello World')
     expect(nodes[0]?.type).toBe('heading')
