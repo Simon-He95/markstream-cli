@@ -8,7 +8,7 @@ const usage = `Usage:
 Options:
   --theme <theme>   Enable Shiki ANSI highlighting, even when stdout is piped.
   --color           Force ANSI styling for markdown text.
-  --no-color        Disable all ANSI output.
+  --no-color        Disable ANSI styling and syntax highlighting.
   --width <columns> Render width.
   --final-only      Keep only final render in normal terminal scrollback.
   --no-final-only   Leave streaming frames in normal terminal output.

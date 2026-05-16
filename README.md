@@ -21,7 +21,7 @@ markstream ./README.md --no-color
 markstream --help
 ```
 
-`--theme <theme>` enables Shiki ANSI highlighting, even when stdout is piped. Use `--no-color` to disable all ANSI output.
+`--theme <theme>` enables Shiki ANSI highlighting, even when stdout is piped. Use `--no-color` to disable ANSI styling and syntax highlighting.
 
 ## Usage
 
@@ -93,7 +93,11 @@ await r.flush()
 
 ## Security
 
-Markdown text is sanitized by default before it is written to the terminal, so raw ESC/BEL/C1 control sequences from untrusted input are rendered as visible symbols instead of being executed by the terminal. Custom `highlightCode` functions receive sanitized code by default unless `render.allowControlSequences` is enabled. The built-in Shiki highlighter also sanitizes token content by default; pass `createShikiHighlightCode({ theme, allowControlSequences: true })` to opt into raw control sequences for Shiki output. The string returned from a custom highlighter is treated as trusted terminal output, because highlighters are expected to emit ANSI styling; use trusted highlighters only.
+Markdown text is sanitized by default before it is written to the terminal, so raw ESC/BEL/C1 control sequences from untrusted input are rendered as visible symbols instead of being executed by the terminal. Custom `highlightCode` functions receive sanitized code by default unless `render.allowControlSequences` is enabled.
+
+To allow raw control sequences from Markdown code blocks to reach Shiki output, enable both `render.allowControlSequences: true` and `createShikiHighlightCode({ theme, allowControlSequences: true })`. The render option controls whether raw Markdown input is sanitized before it reaches the highlighter; the Shiki option controls whether Shiki token content is sanitized before ANSI styling is applied.
+
+The string returned from a custom highlighter is treated as trusted terminal output, because highlighters are expected to emit ANSI styling; use trusted highlighters only.
 
 ## Troubleshooting
 
