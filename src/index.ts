@@ -60,7 +60,7 @@ export async function highlightMarkdownAsync(
     if (inflight.has(key))
       return undefined
 
-    const highlighted = callHighlight(highlightCode, code, language)
+    const highlighted = callHighlight(highlightCode, code, language, options?.render?.onHighlightError)
     if (typeof highlighted === 'string') {
       cache.set(key, highlighted)
       return highlighted
@@ -68,7 +68,8 @@ export async function highlightMarkdownAsync(
 
     if (highlighted instanceof Promise) {
       const task = highlighted.then((value) => {
-        cache.set(key, value)
+        if (value != null)
+          cache.set(key, value)
       }).catch(() => {
         // ignore highlight failures; fallback to plain code
       })

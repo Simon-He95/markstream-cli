@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import process from 'node:process'
 
 const usage = `Usage:
-  markstream [file] [--theme <theme>] [--width <columns>] [--no-color] [--final-only] [--no-final-only]
+  markstream [file|-] [--theme <theme>] [--width <columns>] [--no-color] [--final-only] [--no-final-only]
 
 Options:
   --theme <theme>   Enable Shiki ANSI highlighting, even when stdout is piped.
@@ -15,7 +15,9 @@ Options:
 
 Examples:
   cat README.md | markstream --theme nord --final-only
+  markstream - --theme nord
   markstream ./README.md --no-color
+  markstream -- --weird-file.md
 `
 
 function fail(message) {
@@ -23,11 +25,26 @@ function fail(message) {
   process.exitCode = 1
 }
 
+function setInput(options, arg, dashAsStdin = true) {
+  if (options.file || options.stdin) {
+    fail(`Unexpected argument: ${arg}`)
+    return false
+  }
+
+  if (dashAsStdin && arg === '-')
+    options.stdin = true
+  else
+    options.file = arg
+
+  return true
+}
+
 function parseArgs(args) {
   const options = {
     color: undefined,
     finalOnly: true,
     file: undefined,
+    stdin: false,
     theme: undefined,
     width: undefined,
   }
@@ -37,6 +54,13 @@ function parseArgs(args) {
     if (arg === '--help' || arg === '-h') {
       process.stdout.write(usage)
       process.exit(0)
+    }
+    else if (arg === '--') {
+      for (const positional of args.slice(i + 1)) {
+        if (!setInput(options, positional, false))
+          return undefined
+      }
+      break
     }
     else if (arg === '--no-color') {
       options.color = false
@@ -63,14 +87,16 @@ function parseArgs(args) {
         return fail('Missing valid positive integer for --width')
       options.width = width
     }
+    else if (arg === '-') {
+      if (!setInput(options, arg))
+        return undefined
+    }
     else if (arg.startsWith('-')) {
       return fail(`Unknown option: ${arg}`)
     }
-    else if (options.file) {
-      return fail(`Unexpected argument: ${arg}`)
-    }
     else {
-      options.file = arg
+      if (!setInput(options, arg))
+        return undefined
     }
   }
 
@@ -90,7 +116,7 @@ async function main() {
   if (!options)
     return
 
-  if (!options.file && process.stdin.isTTY)
+  if (!options.file && !options.stdin && process.stdin.isTTY)
     return fail('No input. Pass a file or pipe Markdown on stdin.')
 
   const {
@@ -104,8 +130,18 @@ async function main() {
     width: options.width,
   }
 
-  if (options.theme && options.color !== false)
-    render.highlightCode = createShikiHighlightCode({ theme: options.theme })
+  if (options.theme && options.color !== false) {
+    let warnedTheme = false
+    render.highlightCode = createShikiHighlightCode({
+      theme: options.theme,
+      onError() {
+        if (warnedTheme)
+          return
+        warnedTheme = true
+        process.stderr.write(`Warning: failed to apply theme "${options.theme}"; rendering code without syntax highlighting.\n`)
+      },
+    })
+  }
 
   if (!process.stdout.isTTY) {
     const input = options.file ? await fs.readFile(options.file, 'utf8') : await readStdin()

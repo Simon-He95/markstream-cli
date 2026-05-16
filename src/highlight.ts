@@ -4,11 +4,20 @@ export function callHighlight(
   fn: NonNullable<RenderOptions['highlightCode']>,
   code: string,
   language: string,
-): string | Promise<string> | undefined {
+  onError?: RenderOptions['onHighlightError'],
+): string | Promise<string | undefined> | undefined {
   try {
-    return fn(code, language)
+    const highlighted = fn(code, language)
+    if (highlighted instanceof Promise) {
+      return highlighted.catch((error) => {
+        onError?.(error, code, language)
+        return undefined
+      })
+    }
+    return highlighted
   }
-  catch {
+  catch (error) {
+    onError?.(error, code, language)
     return undefined
   }
 }

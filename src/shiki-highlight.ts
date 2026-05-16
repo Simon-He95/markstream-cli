@@ -15,6 +15,10 @@ export interface ShikiHighlightOptions {
    * @default 'ts'
    */
   defaultLanguage?: BundledLanguage
+  /**
+   * Optional hook invoked when highlighting falls back to plain text.
+   */
+  onError?: (error: unknown, code: string, language: string) => void
 }
 
 export function createShikiHighlightCode(options: ShikiHighlightOptions): NonNullable<RenderOptions['highlightCode']> {
@@ -33,7 +37,8 @@ export function createShikiHighlightCode(options: ShikiHighlightOptions): NonNul
       try {
         return await codeToANSI(code, defaultLanguage, theme, allowControlSequences)
       }
-      catch {
+      catch (error) {
+        options.onError?.(error, code, lang)
         return `${allowControlSequences ? code : sanitizeTerminalText(code)}\n`
       }
     }

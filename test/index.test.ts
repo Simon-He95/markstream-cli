@@ -1,9 +1,11 @@
 import type { HighlightMarkdownOptions } from '../src/index'
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { ansi, createMarkdownStreamRenderer, createTerminalMarkdownStream, highlightMarkdown, highlightMarkdownAsync, parseMarkdown, streamMarkdownToTerminal, stripAnsi } from '../src/index'
+import { ansi, createMarkdownStreamRenderer, createShikiHighlightCode, createTerminalMarkdownStream, highlightMarkdown, highlightMarkdownAsync, parseMarkdown, streamMarkdownToTerminal, stripAnsi } from '../src/index'
 
 const cliPath = fileURLToPath(new URL('../cli.mjs', import.meta.url))
 
@@ -56,6 +58,16 @@ describe('should', () => {
     expect(result.stdout).toContain('Hello')
   })
 
+  it('cli accepts explicit stdin marker', () => {
+    const result = spawnSync(process.execPath, [cliPath, '-', '--no-color'], {
+      encoding: 'utf8',
+      input: '# Hello\n',
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('Hello')
+  })
+
   it('cli renders a file in non-tty mode', () => {
     const fixturePath = fileURLToPath(new URL('./fixtures/complex.md', import.meta.url))
     const result = spawnSync(process.execPath, [cliPath, fixturePath, '--no-color'], {
@@ -66,6 +78,23 @@ describe('should', () => {
     expect(result.stdout).toContain('Footer paragraph.')
   })
 
+  it('cli accepts dash-prefixed files after --', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'markstream-cli-'))
+    try {
+      fs.writeFileSync(path.join(dir, '--weird-file.md'), '# Weird\n')
+      const result = spawnSync(process.execPath, [cliPath, '--no-color', '--', '--weird-file.md'], {
+        cwd: dir,
+        encoding: 'utf8',
+      })
+
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain('Weird')
+    }
+    finally {
+      fs.rmSync(dir, { force: true, recursive: true })
+    }
+  })
+
   it('cli renders themed ANSI output when stdout is piped', () => {
     const result = spawnSync(process.execPath, [cliPath, '--theme', 'nord'], {
       encoding: 'utf8',
@@ -74,6 +103,17 @@ describe('should', () => {
 
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('\u001B[')
+  })
+
+  it('cli warns when theme highlighting falls back to plain code', () => {
+    const result = spawnSync(process.execPath, [cliPath, '--theme', 'missing-theme'], {
+      encoding: 'utf8',
+      input: '```ts\nconst x = 1\n```\n',
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stderr).toContain('Warning: failed to apply theme "missing-theme"')
+    expect(result.stdout).toContain('const x = 1')
   })
 
   it('cli accepts equals option values', () => {
@@ -176,9 +216,13 @@ describe('should', () => {
   })
 
   it('async render swallows async highlight rejection', async () => {
+    const errors: { error: unknown, code: string, language: string }[] = []
     const out = await highlightMarkdownAsync('```ts\nconst x = 1\n```\n', {
       render: {
         color: false,
+        onHighlightError(error, code, language) {
+          errors.push({ code, error, language })
+        },
         highlightCode: async () => {
           throw new Error('boom')
         },
@@ -186,12 +230,19 @@ describe('should', () => {
     })
 
     expect(out).toContain('const x = 1')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.code).toBe('const x = 1')
+    expect(errors[0]?.language).toBe('ts')
   })
 
   it('async render swallows sync highlight throw', async () => {
+    const errors: { error: unknown, code: string, language: string }[] = []
     const out = await highlightMarkdownAsync('```ts\nconst x = 1\n```\n', {
       render: {
         color: false,
+        onHighlightError(error, code, language) {
+          errors.push({ code, error, language })
+        },
         highlightCode: () => {
           throw new Error('boom')
         },
@@ -199,6 +250,26 @@ describe('should', () => {
     })
 
     expect(out).toContain('const x = 1')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.code).toBe('const x = 1')
+    expect(errors[0]?.language).toBe('ts')
+  })
+
+  it('shiki highlighter reports final fallback errors', async () => {
+    const errors: { error: unknown, code: string, language: string }[] = []
+    const highlightCode = createShikiHighlightCode({
+      theme: 'missing-theme' as any,
+      onError(error, code, language) {
+        errors.push({ code, error, language })
+      },
+    })
+
+    const out = await highlightCode('const x = 1', 'ts')
+
+    expect(out).toContain('const x = 1')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.code).toBe('const x = 1')
+    expect(errors[0]?.language).toBe('ts')
   })
 
   it('render complex markdown (heading/blockquote/code/footnote/reference)', () => {
@@ -413,9 +484,13 @@ describe('should', () => {
 
   it('streaming: async highlight rejection is swallowed', async () => {
     const highlight = deferred<string>()
+    const errors: { error: unknown, code: string, language: string }[] = []
     const r = createMarkdownStreamRenderer({
       render: {
         color: false,
+        onHighlightError(error, code, language) {
+          errors.push({ code, error, language })
+        },
         highlightCode: () => highlight.promise,
       },
     })
@@ -425,6 +500,9 @@ describe('should', () => {
     highlight.reject(new Error('boom'))
 
     await expect(r.flush()).resolves.toEqual([])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.code).toBe('const x = 1')
+    expect(errors[0]?.language).toBe('ts')
   })
 
   it('streaming: sync highlight throw is swallowed', async () => {

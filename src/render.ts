@@ -31,6 +31,7 @@ import type {
 import type { AnsiStyle, ColorMode } from './ansi'
 import { visibleCellWidth } from 'markstream-terminal'
 import { applyAnsiStyle, isColorEnabled, mergeAnsiStyle } from './ansi'
+import { callHighlight } from './highlight'
 import { findStreamingLoadingCodeBlock } from './markdown-node-utils'
 import { sanitizeTerminalText } from './sanitize'
 
@@ -81,6 +82,10 @@ export interface RenderOptions {
    * (`loading === false`). Return value may include ANSI escape codes.
    */
   highlightCode?: (code: string, language: string) => string | Promise<string>
+  /**
+   * Optional hook for syntax highlighter failures.
+   */
+  onHighlightError?: (error: unknown, code: string, language: string) => void
 }
 
 interface RenderContext {
@@ -93,6 +98,7 @@ interface RenderContext {
   listIndex: number
   blockquoteDepth: number
   highlightCode?: RenderOptions['highlightCode']
+  onHighlightError?: RenderOptions['onHighlightError']
   streaming: boolean
   streamingLoadingCodeBlock: CodeBlockNode | null
   allowControlSequences: boolean
@@ -150,6 +156,7 @@ function createRootContext(options?: RenderOptions): RenderContext {
     listIndex: 0,
     blockquoteDepth: 0,
     highlightCode: options?.highlightCode,
+    onHighlightError: options?.onHighlightError,
     streaming: Boolean(options?.streaming),
     streamingLoadingCodeBlock: null,
     allowControlSequences: Boolean(options?.allowControlSequences),
@@ -477,7 +484,7 @@ function renderCodeBlockBody(code: string, language: string, node: CodeBlockNode
   const isDiff = Boolean((node as any).diff) || language === 'diff' || language === 'patch'
 
   if (allowHighlight && ctx.highlightCode) {
-    const highlighted = ctx.highlightCode(markdownText(code, ctx), language)
+    const highlighted = callHighlight(ctx.highlightCode, markdownText(code, ctx), language, ctx.onHighlightError)
     if (highlighted instanceof Promise)
       return isDiff ? renderDiffCode(code, ctx) : renderPlainCode(code, ctx)
 

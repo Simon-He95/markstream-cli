@@ -151,7 +151,7 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
 
     const highlight = highlightFn!
     const gen = generation
-    const res = callHighlight(highlight, code, language)
+    const res = callHighlight(highlight, code, language, renderOptions?.onHighlightError)
 
     if (typeof res === 'string') {
       highlightCache.set(key, res)
@@ -161,6 +161,8 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
     if (res instanceof Promise) {
       const task = res.then((highlighted) => {
         if (gen !== generation)
+          return
+        if (highlighted == null)
           return
 
         highlightCache.set(key, highlighted)
