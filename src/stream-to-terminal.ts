@@ -46,6 +46,9 @@ export interface StreamMarkdownToTerminalResult {
   getContent: () => string
 }
 
+const batchIntervalMs = 16
+const batchMaxChars = 4096
+
 /**
  * High-level helper that streams markdown to a terminal session.
  * It automatically starts/stops the session and flushes pending async highlights.
@@ -57,12 +60,68 @@ export async function streamMarkdownToTerminal(
   const s = createTerminalMarkdownStream(options)
   s.start()
 
+  let buffered = ''
+  let batchTimer: ReturnType<typeof setTimeout> | undefined
+  let batchError: unknown
+  const shouldBatchChunks = options.onChunkPushed == null
+
+  function clearBatchTimer() {
+    if (!batchTimer)
+      return
+    clearTimeout(batchTimer)
+    batchTimer = undefined
+  }
+
+  function flushBuffered() {
+    if (!buffered)
+      return
+    const chunk = buffered
+    buffered = ''
+    clearBatchTimer()
+    s.push(chunk)
+  }
+
+  function scheduleFlush() {
+    if (batchTimer)
+      return
+    batchTimer = setTimeout(() => {
+      try {
+        flushBuffered()
+      }
+      catch (error) {
+        batchError = error
+      }
+    }, batchIntervalMs)
+    batchTimer.unref?.()
+  }
+
+  function pushChunk(chunk: string) {
+    if (!shouldBatchChunks) {
+      s.push(chunk)
+      return
+    }
+
+    buffered += chunk
+    if (buffered.length >= batchMaxChars)
+      flushBuffered()
+    else
+      scheduleFlush()
+  }
+
+  function throwBatchError() {
+    if (batchError)
+      throw batchError
+  }
+
   try {
     await forEachChunk(source, async (chunk) => {
-      s.push(chunk)
+      throwBatchError()
+      pushChunk(chunk)
       await options.onChunkPushed?.(chunk)
     })
 
+    throwBatchError()
+    flushBuffered()
     await s.flush()
 
     return {
@@ -71,6 +130,7 @@ export async function streamMarkdownToTerminal(
     }
   }
   finally {
+    clearBatchTimer()
     s.stop()
   }
 }

@@ -66,6 +66,7 @@
     "demo:replace": "tsx scripts/demo-replace.ts",
     "demo:highlight-md": "tsx scripts/demo-highlight-markdown-stream.ts",
     "demo:all-color": "tsx scripts/demo-all-syntax-color-stream.ts",
+    "bench:stream": "tsx scripts/bench-stream.ts",
     "build:terminal": "pnpm --dir packages/terminal run build"
   },
   "dependencies": {

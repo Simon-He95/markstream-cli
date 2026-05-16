@@ -2,7 +2,7 @@ import type { MarkdownIt, ParsedNode, ParseOptions } from 'stream-markdown-parse
 import type { RenderOptions } from './render'
 import type { MarkdownStreamRenderer, MarkdownStreamRendererOptions } from './stream'
 import { getMarkdown, parseMarkdownToStructure } from 'stream-markdown-parser'
-import { callHighlight } from './highlight'
+import { callHighlight, isPromiseLike } from './highlight'
 import { normalizeMarkdownInput } from './normalize-markdown-input'
 import { renderNodesToAnsi } from './render'
 import { createShikiHighlightCode } from './shiki-highlight'
@@ -66,7 +66,7 @@ export async function highlightMarkdownAsync(
       return highlighted
     }
 
-    if (highlighted instanceof Promise) {
+    if (isPromiseLike<string | undefined>(highlighted)) {
       const task = highlighted.then((value) => {
         if (value != null)
           cache.set(key, value)
