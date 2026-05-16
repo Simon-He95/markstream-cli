@@ -1,5 +1,5 @@
 import type { TerminalSession, TerminalSessionOptions } from 'markstream-terminal'
-import type { TerminalMarkdownStreamOptions } from './terminal-markdown-stream'
+import type { TerminalMarkdownStream, TerminalMarkdownStreamOptions } from './terminal-markdown-stream'
 import { createTerminalMarkdownStream } from './terminal-markdown-stream'
 
 export type MarkdownChunkSource = string | Iterable<string> | AsyncIterable<string>
@@ -10,6 +10,11 @@ export interface StreamMarkdownToTerminalOptions extends TerminalMarkdownStreamO
    * Useful for demos/tests.
    */
   onChunkPushed?: (chunk: string) => void | Promise<void>
+  /**
+   * Optional hook for callers that need to stop the terminal session from
+   * external cleanup handlers, such as process signals.
+   */
+  onSessionCreated?: (stream: TerminalMarkdownStream, stop: () => void) => void
 }
 
 function isAsyncIterable(x: any): x is AsyncIterable<string> {
@@ -58,7 +63,16 @@ export async function streamMarkdownToTerminal(
   options: StreamMarkdownToTerminalOptions & { terminal?: TerminalSession | TerminalSessionOptions } = {},
 ): Promise<StreamMarkdownToTerminalResult> {
   const s = createTerminalMarkdownStream(options)
-  s.start()
+  let stopped = false
+
+  function stop() {
+    if (stopped)
+      return
+    stopped = true
+    s.stop()
+  }
+
+  options.onSessionCreated?.(s, stop)
 
   let buffered = ''
   let batchTimer: ReturnType<typeof setTimeout> | undefined
@@ -114,6 +128,8 @@ export async function streamMarkdownToTerminal(
   }
 
   try {
+    s.start()
+
     await forEachChunk(source, async (chunk) => {
       throwBatchError()
       pushChunk(chunk)
@@ -131,6 +147,6 @@ export async function streamMarkdownToTerminal(
   }
   finally {
     clearBatchTimer()
-    s.stop()
+    stop()
   }
 }

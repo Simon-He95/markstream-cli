@@ -142,8 +142,8 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
   const finalOnly = options.finalOnly ?? true
 
   let term: TerminalSession
-  let streamIsTTY: boolean | undefined
-  let measuredColumns = 0
+  let streamIsTTY = false
+  let targetStream: any = process.stdout
   let policy: TerminalStreamingPolicy = {
     isTTY: true,
     useAltScreenForStreaming: false,
@@ -161,12 +161,14 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
   }
   else {
     const termOptions = options.terminal ?? {}
-    const targetStream = termOptions.stream ?? (process.stdout as any)
-    streamIsTTY = targetStream?.isTTY ?? (process.stdout as any)?.isTTY
-    const isTTY = streamIsTTY !== false
+    const hasCustomStream = termOptions.stream != null
+    targetStream = termOptions.stream ?? (process.stdout as any)
+    streamIsTTY = hasCustomStream
+      ? targetStream?.isTTY === true
+      : (process.stdout as any)?.isTTY === true
+    const isTTY = streamIsTTY
 
     const rows = Math.max(0, Number(targetStream?.rows ?? (process.stdout as any)?.rows ?? 0))
-    measuredColumns = Math.max(0, Number(targetStream?.columns ?? (process.stdout as any)?.columns ?? 0))
 
     const resolvedHeight = resolveNumberOption(options.height, rows, defaultHeightFromRows(rows || 24))
     const resolvedViewportHeight = (options.viewportHeight == null && finalOnly && isTTY) ? resolvedHeight : options.viewportHeight
@@ -263,8 +265,12 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
 
   const render = { ...(options.render ?? {}) }
 
+  function currentColumns() {
+    return Math.max(0, Number(targetStream?.columns ?? (process.stdout as any)?.columns ?? 0))
+  }
+
   function resolveWidth() {
-    const columns = measuredColumns || Math.max(0, Number((process.stdout as any)?.columns ?? 0))
+    const columns = currentColumns()
     const resolved = resolveNumberOption(options.width, columns, render.width ?? defaultWidthFromColumns(columns || 80))
     return resolved
   }

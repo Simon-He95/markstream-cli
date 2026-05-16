@@ -115,16 +115,8 @@ async function readStdin() {
   return out
 }
 
-async function streamWithCleanup(createTerminalMarkdownStream, source, options) {
-  const s = createTerminalMarkdownStream(options)
-  let stopped = false
-
-  function stop() {
-    if (stopped)
-      return
-    stopped = true
-    s.stop()
-  }
+async function streamWithCleanup(streamMarkdownToTerminal, source, options) {
+  let stop = () => {}
 
   function onSigint() {
     stop()
@@ -154,17 +146,12 @@ async function streamWithCleanup(createTerminalMarkdownStream, source, options) 
   process.once('unhandledRejection', onUnhandledRejection)
 
   try {
-    s.start()
-
-    if (typeof source === 'string') {
-      s.push(source)
-    }
-    else {
-      for await (const chunk of source)
-        s.push(chunk)
-    }
-
-    await s.flush()
+    await streamMarkdownToTerminal(source, {
+      ...options,
+      onSessionCreated(_stream, stopSession) {
+        stop = stopSession
+      },
+    })
   }
   finally {
     process.removeListener('SIGINT', onSigint)
@@ -184,9 +171,9 @@ async function main() {
     return fail('No input. Pass a file or pipe Markdown on stdin.')
 
   const {
-    createTerminalMarkdownStream,
     createShikiHighlightCode,
     highlightMarkdownAsync,
+    streamMarkdownToTerminal,
   } = await import('markstream-cli')
 
   const render = {
@@ -217,7 +204,7 @@ async function main() {
     ? await fs.readFile(options.file, 'utf8')
     : process.stdin.setEncoding('utf8')
 
-  await streamWithCleanup(createTerminalMarkdownStream, source, {
+  await streamWithCleanup(streamMarkdownToTerminal, source, {
     finalOnly: options.finalOnly,
     requireTTY: false,
     render,

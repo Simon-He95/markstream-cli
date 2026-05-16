@@ -746,6 +746,42 @@ describe('should', () => {
     expect(out).not.toContain('\u001B8')
   })
 
+  it('streamMarkdownToTerminal: custom stream without isTTY is treated as non-TTY', async () => {
+    const written: string[] = []
+    const stream = {
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+    const md = '```ts\nconst x = 1\n```\n'
+
+    async function* chunks() {
+      yield '```ts\nconst x = 1\n'
+      yield '```\n'
+    }
+
+    await streamMarkdownToTerminal(chunks(), {
+      terminal: { stream },
+      requireTTY: false,
+      render: {
+        color: false,
+        highlightCode: async code => `<<${code.toUpperCase()}>>`,
+      },
+    })
+
+    const out = written.join('')
+    const expected = await highlightMarkdownAsync(md, {
+      render: {
+        color: false,
+        highlightCode: async code => `<<${code.toUpperCase()}>>`,
+      },
+    })
+    expect(out).toBe(expected)
+    expect(out).not.toContain('\u001B[')
+    expect(out).not.toContain('\u001B7')
+    expect(out).not.toContain('\u001B8')
+  })
+
   it('streamMarkdownToTerminal: batches tiny chunks before rendering', async () => {
     const written: string[] = []
     const stream = {
@@ -926,6 +962,39 @@ describe('should', () => {
     const rule = stripTerminalControlSequences(written.join('')).split('\n').find(line => line.includes('─')) ?? ''
     expect(rule).toHaveLength(28)
     expect(streamingOut).toContain(`${ansi.restoreCursor}${ansi.cursorDown(5)}${ansi.carriageReturn}`)
+  })
+
+  it('createTerminalMarkdownStream: reads custom stream columns before each push', () => {
+    const written: string[] = []
+    const seenColumns: number[] = []
+    const stream = {
+      isTTY: true,
+      columns: 30,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    const s = createTerminalMarkdownStream({
+      terminal: { stream, clear: false, hideCursor: false, sync: false },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: false,
+      sync: false,
+      width(columns) {
+        seenColumns.push(columns)
+        return columns - 2
+      },
+      render: { color: false },
+    })
+
+    s.start()
+    s.push('a')
+    stream.columns = 20
+    s.push('b')
+    s.stop()
+
+    expect(seenColumns).toEqual([30, 20])
   })
 
   it('streamMarkdownToTerminal: loadingIndicator shows during streaming but not in final output', async () => {
