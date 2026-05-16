@@ -7,7 +7,10 @@ const usage = `Usage:
 
 Options:
   --theme <theme>   Enable Shiki ANSI highlighting, even when stdout is piped.
+  --color           Force ANSI styling for markdown text.
   --no-color        Disable all ANSI output.
+  --width <columns> Render width.
+  --final-only      Keep only final render in normal terminal scrollback.
 
 Examples:
   cat README.md | markstream --theme nord --final-only
@@ -82,6 +85,9 @@ async function main() {
   const options = parseArgs(process.argv.slice(2))
   if (!options)
     return
+
+  if (!options.file && process.stdin.isTTY)
+    return fail('No input. Pass a file or pipe Markdown on stdin.')
 
   const {
     createShikiHighlightCode,

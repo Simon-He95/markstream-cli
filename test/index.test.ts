@@ -36,6 +36,44 @@ describe('should', () => {
     }
   })
 
+  it('cli prints help', () => {
+    const result = spawnSync(process.execPath, [cliPath, '--help'], { encoding: 'utf8' })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('Usage:')
+    expect(result.stdout).toContain('--color')
+  })
+
+  it('cli renders stdin in non-tty mode', () => {
+    const result = spawnSync(process.execPath, [cliPath, '--no-color'], {
+      encoding: 'utf8',
+      input: '# Hello\n',
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('Hello')
+  })
+
+  it('cli renders a file in non-tty mode', () => {
+    const fixturePath = fileURLToPath(new URL('./fixtures/complex.md', import.meta.url))
+    const result = spawnSync(process.execPath, [cliPath, fixturePath, '--no-color'], {
+      encoding: 'utf8',
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('Footer paragraph.')
+  })
+
+  it('cli renders themed ANSI output when stdout is piped', () => {
+    const result = spawnSync(process.execPath, [cliPath, '--theme', 'nord'], {
+      encoding: 'utf8',
+      input: '```ts\nconst x = 1\n```\n',
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('\u001B[')
+  })
+
   it('parse markdown to nodes', () => {
     const nodes = parseMarkdown('# Hello World')
     expect(nodes[0]?.type).toBe('heading')
