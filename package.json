@@ -70,20 +70,20 @@
   },
   "dependencies": {
     "@shikijs/vscode-textmate": "^10.0.2",
-    "ansis": "^4.2.0",
+    "ansis": "^4.3.0",
     "markstream-terminal": "workspace:^",
-    "shiki": "^3.20.0",
-    "stream-markdown-parser": "^0.0.51"
+    "shiki": "^3.23.0",
+    "stream-markdown-parser": "1.0.0-rc.0"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^4.19.0",
-    "@sxzz/prettier-config": "^2.2.6",
+    "@sxzz/prettier-config": "^2.3.1",
     "@types/node": "^18.19.130",
     "bumpp": "^8.2.1",
-    "eslint": "^9.39.2",
+    "eslint": "^9.39.4",
     "lint-staged": "^13.3.0",
     "picocolors": "^1.1.1",
-    "prettier": "^3.7.4",
+    "prettier": "^3.8.3",
     "rimraf": "^3.0.2",
     "tsdown": "^0.9.9",
     "tsx": "^3.14.0",
