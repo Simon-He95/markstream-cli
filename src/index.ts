@@ -68,6 +68,8 @@ export async function highlightMarkdownAsync(
     if (highlighted instanceof Promise) {
       const task = highlighted.then((value) => {
         cache.set(key, value)
+      }).catch(() => {
+        // ignore highlight failures; fallback to plain code
       })
       inflight.set(key, task)
       pending.push(task)
@@ -84,7 +86,7 @@ export async function highlightMarkdownAsync(
   if (pending.length === 0)
     return first
 
-  await Promise.all(pending)
+  await Promise.allSettled(pending)
   return renderNodesToAnsi(nodes, render)
 }
 

@@ -100,6 +100,19 @@ describe('should', () => {
     expect(out).toContain('<<CONST X = 1>>')
   })
 
+  it('async render swallows async highlight rejection', async () => {
+    const out = await highlightMarkdownAsync('```ts\nconst x = 1\n```\n', {
+      render: {
+        color: false,
+        highlightCode: async () => {
+          throw new Error('boom')
+        },
+      },
+    })
+
+    expect(out).toContain('const x = 1')
+  })
+
   it('render complex markdown (heading/blockquote/code/footnote/reference)', () => {
     const md = fs.readFileSync(new URL('./fixtures/complex.md', import.meta.url), 'utf8')
     const out = highlightMarkdown(md, { render: { color: false, width: 40 } })

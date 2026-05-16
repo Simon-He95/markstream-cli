@@ -6,6 +6,10 @@ import { createShikiHighlightCode, highlightMarkdownAsync, streamMarkdownToTermi
 const usage = `Usage:
   markstream [file] [--theme <theme>] [--width <columns>] [--no-color] [--final-only]
 
+Options:
+  --theme <theme>   Enable Shiki ANSI highlighting, even when stdout is piped.
+  --no-color        Disable all ANSI output.
+
 Examples:
   cat README.md | markstream --theme nord --final-only
   markstream ./README.md --no-color

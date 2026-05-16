@@ -23,6 +23,8 @@ markstream ./README.md --no-color
 markstream --help
 ```
 
+`--theme <theme>` enables Shiki ANSI highlighting, even when stdout is piped. Use `--no-color` to disable all ANSI output.
+
 ## Usage
 
 One-shot streaming to terminal:
