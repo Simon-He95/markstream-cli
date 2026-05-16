@@ -86,3 +86,39 @@ jobs:
 
       - name: Typecheck
         run: nr typecheck
+
+  pack-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - run: corepack enable
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -r --filter markstream-terminal --filter . run build
+
+      - name: Pack smoke
+        run: |
+          PACK_DIR="$(mktemp -d)"
+          APP_DIR="$(mktemp -d)"
+          pnpm --filter markstream-terminal pack --pack-destination "$PACK_DIR"
+          pnpm pack --pack-destination "$PACK_DIR"
+          npm install --prefix "$APP_DIR" "$PACK_DIR"/markstream-terminal-*.tgz "$PACK_DIR"/markstream-cli-*.tgz
+          cd "$APP_DIR"
+          node -e "import('markstream-cli').then(m => { if (typeof m.streamMarkdownToTerminal !== 'function') process.exit(1) })"
+          node -e "const m = require('markstream-cli'); if (typeof m.streamMarkdownToTerminal !== 'function') process.exit(1)"
+          PATH="$APP_DIR/node_modules/.bin:$PATH" markstream --help

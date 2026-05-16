@@ -7,6 +7,16 @@ function stripTerminalControlSequences(s: string) {
   return stripAnsi(s)
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 describe('should', () => {
   it('parse markdown to nodes', () => {
     const nodes = parseMarkdown('# Hello World')
@@ -41,6 +51,36 @@ describe('should', () => {
     expect(out).toContain('\u001B[31m-old')
     expect(out).toContain('\u001B[32m+new')
     expect(stripAnsi(out)).toContain('@@ -1,2 +1,2 @@')
+  })
+
+  it('render sanitizes terminal control sequences by default', () => {
+    const md = [
+      'hello \u001B]52;c;pw\u0007',
+      '',
+      '`x\u009B31m`',
+      '',
+      '```ts',
+      'console.log("\u001B[31m")',
+      '```',
+      '',
+    ].join('\n')
+
+    const out = highlightMarkdown(md, { render: { color: false } })
+
+    expect(out).not.toContain('\u001B')
+    expect(out).not.toContain('\u0007')
+    expect(out).not.toContain('\u009B')
+    expect(out).toContain('hello ␛]52;c;pw␇')
+    expect(out).toContain('x␛[31m')
+    expect(out).toContain('console.log("␛[31m")')
+  })
+
+  it('render can opt into raw terminal control sequences', () => {
+    const out = highlightMarkdown('hello \u001B[31mred\n', {
+      render: { color: false, allowControlSequences: true },
+    })
+
+    expect(out).toContain('\u001B[31mred')
   })
 
   it('render complex markdown (heading/blockquote/code/footnote/reference)', () => {
@@ -185,6 +225,64 @@ describe('should', () => {
 
     const patches = await r.flush()
     expect(patches).toEqual(['\u001B8\u001B[u```ts\u001B[K\n<<CONST X = 1>>\u001B[K\n```\u001B[K\n\u001B[J'])
+  })
+
+  it('streaming: tail async highlight is only scheduled once', async () => {
+    const highlight = deferred<string>()
+    let calls = 0
+    const r = createMarkdownStreamRenderer({
+      render: {
+        color: false,
+        highlightCode: () => {
+          calls += 1
+          return highlight.promise
+        },
+      },
+    })
+
+    r.push('```ts\nconst x = 1\n')
+    r.push('```')
+    r.push('\n\nafter\n')
+
+    expect(calls).toBe(1)
+    highlight.resolve('<<CONST X = 1>>')
+    const patches = await r.flush()
+    expect(patches.join('')).toContain('<<CONST X = 1>>')
+  })
+
+  it('streaming: reset ignores stale async highlight patches', async () => {
+    const highlight = deferred<string>()
+    const r = createMarkdownStreamRenderer({
+      render: {
+        color: false,
+        highlightCode: () => highlight.promise,
+      },
+    })
+
+    r.push('```ts\nconst x = 1\n')
+    r.push('```')
+    r.reset()
+    highlight.resolve('<<STALE>>')
+
+    await Promise.resolve()
+    expect(await r.flush()).toEqual([])
+    expect(r.getRenderedText()).toBe('')
+  })
+
+  it('streaming: async highlight rejection is swallowed', async () => {
+    const highlight = deferred<string>()
+    const r = createMarkdownStreamRenderer({
+      render: {
+        color: false,
+        highlightCode: () => highlight.promise,
+      },
+    })
+
+    r.push('```ts\nconst x = 1\n')
+    r.push('```')
+    highlight.reject(new Error('boom'))
+
+    await expect(r.flush()).resolves.toEqual([])
   })
 
   it('streaming: async highlight works for non-tail code blocks', async () => {

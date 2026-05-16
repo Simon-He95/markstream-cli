@@ -32,6 +32,7 @@ import type { AnsiStyle, ColorMode } from './ansi'
 import { visibleCellWidth } from 'markstream-terminal'
 import { applyAnsiStyle, isColorEnabled, mergeAnsiStyle } from './ansi'
 import { findStreamingLoadingCodeBlock } from './markdown-node-utils'
+import { sanitizeTerminalText } from './sanitize'
 
 export interface RenderTheme {
   heading: (level: number) => AnsiStyle
@@ -65,6 +66,11 @@ export interface RenderOptions {
   width?: number
   theme?: Partial<RenderTheme>
   /**
+   * Allow raw terminal control sequences from Markdown input to reach output.
+   * @default false
+   */
+  allowControlSequences?: boolean
+  /**
    * Enable streaming-friendly rendering for mid-state nodes (e.g. omit the
    * closing fence for `code_block.loading === true`).
    * @default false
@@ -89,6 +95,7 @@ interface RenderContext {
   highlightCode?: RenderOptions['highlightCode']
   streaming: boolean
   streamingLoadingCodeBlock: CodeBlockNode | null
+  allowControlSequences: boolean
 }
 
 const defaultTheme: RenderTheme = {
@@ -145,11 +152,16 @@ function createRootContext(options?: RenderOptions): RenderContext {
     highlightCode: options?.highlightCode,
     streaming: Boolean(options?.streaming),
     streamingLoadingCodeBlock: null,
+    allowControlSequences: Boolean(options?.allowControlSequences),
   }
 }
 
 function styleText(text: string, style: AnsiStyle, ctx: RenderContext) {
   return applyAnsiStyle(text, style, ctx.colorEnabled)
+}
+
+function markdownText(text: string, ctx: RenderContext) {
+  return ctx.allowControlSequences ? text : sanitizeTerminalText(text)
 }
 
 function renderInlineNodes(nodes: ParsedNode[], ctx: RenderContext, inherited: AnsiStyle): string {
@@ -190,12 +202,12 @@ function renderInlineNode(node: ParsedNode, ctx: RenderContext, inherited: AnsiS
     case 'reference':
       return renderReference(node as ReferenceNode, ctx, inherited)
     default:
-      return styleText((node as any).raw ?? '', inherited, ctx)
+      return styleText(markdownText(String((node as any).raw ?? ''), ctx), inherited, ctx)
   }
 }
 
 function renderText(node: TextNode, ctx: RenderContext, inherited: AnsiStyle) {
-  return styleText(node.content, inherited, ctx)
+  return styleText(markdownText(node.content, ctx), inherited, ctx)
 }
 
 function renderStrong(node: StrongNode, ctx: RenderContext, inherited: AnsiStyle) {
@@ -220,20 +232,20 @@ function renderHighlight(node: HighlightNode, ctx: RenderContext, inherited: Ans
 
 function renderInlineCode(node: InlineCodeNode, ctx: RenderContext, inherited: AnsiStyle) {
   const next = mergeAnsiStyle(inherited, ctx.theme.inlineCode)
-  return styleText(node.code, next, ctx)
+  return styleText(markdownText(node.code, ctx), next, ctx)
 }
 
 function renderLink(node: LinkNode, ctx: RenderContext, inherited: AnsiStyle) {
   // Terminals can't "open" links; treat as ordinary text.
   if (node.raw)
-    return styleText(node.raw, inherited, ctx)
+    return styleText(markdownText(node.raw, ctx), inherited, ctx)
 
   // Fallback: reconstruct markdown-like text.
   const text = node.children?.length
     ? renderInlineNodes(node.children, ctx, inherited)
-    : (node.text ?? node.href ?? '')
+    : markdownText(node.text ?? node.href ?? '', ctx)
 
-  const href = node.href ?? ''
+  const href = markdownText(node.href ?? '', ctx)
   return styleText(href ? `[${text}](${href})` : text, inherited, ctx)
 }
 
@@ -242,13 +254,13 @@ function renderImage(node: ImageNode, ctx: RenderContext, inherited: AnsiStyle) 
   // `stream-markdown-parser` sets `raw` to the alt text for images (not the
   // original markdown), so only trust it if it already looks like an image token.
   if (typeof node.raw === 'string' && node.raw.trimStart().startsWith('!['))
-    return styleText(node.raw, inherited, ctx)
+    return styleText(markdownText(node.raw, ctx), inherited, ctx)
 
   // Reconstruct markdown-like image token.
-  const alt = node.alt ?? (typeof node.raw === 'string' ? node.raw : '') ?? ''
-  const src = node.src ?? (node as any).href ?? (node as any).url ?? ''
+  const alt = markdownText(node.alt ?? (typeof node.raw === 'string' ? node.raw : '') ?? '', ctx)
+  const src = markdownText(node.src ?? (node as any).href ?? (node as any).url ?? '', ctx)
   const title = typeof node.title === 'string' && node.title.length > 0
-    ? ` "${node.title.replaceAll('"', '\\"')}"`
+    ? ` "${markdownText(node.title, ctx).replaceAll('"', '\\"')}"`
     : ''
   const text = src ? `![${alt}](${src}${title})` : `![${alt}]`
   return styleText(text, inherited, ctx)
@@ -269,11 +281,11 @@ function renderMathInline(node: MathInlineNode, ctx: RenderContext, inherited: A
   const text = typeof raw === 'string' && raw.length > 0
     ? raw
     : `$${node.content ?? ''}$`
-  return styleText(text, next, ctx)
+  return styleText(markdownText(text, ctx), next, ctx)
 }
 
 function renderFootnoteReference(node: FootnoteReferenceNode, ctx: RenderContext, inherited: AnsiStyle) {
-  return styleText(node.raw || `[^${node.id}]`, inherited, ctx)
+  return styleText(markdownText(node.raw || `[^${node.id}]`, ctx), inherited, ctx)
 }
 
 function renderFootnoteAnchor(_node: FootnoteAnchorNode, _ctx: RenderContext, _inherited: AnsiStyle) {
@@ -281,7 +293,7 @@ function renderFootnoteAnchor(_node: FootnoteAnchorNode, _ctx: RenderContext, _i
 }
 
 function renderReference(node: ReferenceNode, ctx: RenderContext, inherited: AnsiStyle) {
-  return styleText(node.raw || `[${node.id}]`, inherited, ctx)
+  return styleText(markdownText(node.raw || `[${node.id}]`, ctx), inherited, ctx)
 }
 
 function renderBlockNodes(nodes: ParsedNode[], ctx: RenderContext): string {
@@ -316,7 +328,7 @@ function renderBlockNode(node: ParsedNode, ctx: RenderContext): string {
     case 'footnote':
       return renderFootnote(node as FootnoteNode, ctx)
     default:
-      return (node as any).raw ? `${(node as any).raw}\n` : ''
+      return (node as any).raw ? `${markdownText(String((node as any).raw), ctx)}\n` : ''
   }
 }
 
@@ -378,7 +390,7 @@ function renderHeading(node: HeadingNode, ctx: RenderContext) {
   const headingStyle = mergeAnsiStyle({}, ctx.theme.heading(node.level))
   const text = node.children?.length
     ? renderInlineNodes(node.children, ctx, headingStyle)
-    : styleText(node.text ?? '', headingStyle, ctx)
+    : styleText(markdownText(node.text ?? '', ctx), headingStyle, ctx)
   return `${ctx.indent}${text}\n\n`
 }
 
@@ -438,7 +450,7 @@ function renderCodeBlock(node: CodeBlockNode, ctx: RenderContext) {
   const isDiff = Boolean((node as any).diff) || language === 'diff' || language === 'patch'
   const displayLanguage = language || (isDiff ? 'diff' : '')
 
-  const label = displayLanguage ? `\`\`\`${displayLanguage}` : '```'
+  const label = displayLanguage ? `\`\`\`${markdownText(displayLanguage, ctx)}` : '```'
   const fence = styleText(label, ctx.theme.codeBlockFence, ctx)
   const codeRaw = (isDiff && typeof (node as any).raw === 'string') ? String((node as any).raw) : String(node.code ?? '')
   const code = codeRaw.replace(/\n$/, '')
@@ -448,7 +460,7 @@ function renderCodeBlock(node: CodeBlockNode, ctx: RenderContext) {
     const lines = code
       ? code
           .split('\n')
-          .map(line => `${ctx.indent}${styleText(line, ctx.theme.codeBlockText, ctx)}`)
+          .map(line => `${ctx.indent}${styleText(markdownText(line, ctx), ctx.theme.codeBlockText, ctx)}`)
           .join('\n')
       : ''
     return lines ? `${ctx.indent}${fence}\n${lines}\n` : `${ctx.indent}${fence}\n`
@@ -465,7 +477,7 @@ function renderCodeBlockBody(code: string, language: string, node: CodeBlockNode
   const isDiff = Boolean((node as any).diff) || language === 'diff' || language === 'patch'
 
   if (allowHighlight && ctx.highlightCode) {
-    const highlighted = ctx.highlightCode(code, language)
+    const highlighted = ctx.highlightCode(markdownText(code, ctx), language)
     if (highlighted instanceof Promise)
       return isDiff ? renderDiffCode(code, ctx) : renderPlainCode(code, ctx)
 
@@ -488,7 +500,7 @@ function renderPlainCode(code: string, ctx: RenderContext) {
     return ''
   return code
     .split('\n')
-    .map(line => `${ctx.indent}${styleText(line, ctx.theme.codeBlockText, ctx)}`)
+    .map(line => `${ctx.indent}${styleText(markdownText(line, ctx), ctx.theme.codeBlockText, ctx)}`)
     .join('\n')
 }
 
@@ -508,7 +520,7 @@ function renderDiffCode(code: string, ctx: RenderContext) {
         style = ctx.theme.diffAdded
       else if (line.startsWith('-'))
         style = ctx.theme.diffRemoved
-      return `${ctx.indent}${styleText(line, style, ctx)}`
+      return `${ctx.indent}${styleText(markdownText(line, ctx), style, ctx)}`
     })
     .join('\n')
 }
@@ -528,14 +540,14 @@ function renderMathBlock(node: MathBlockNode, ctx: RenderContext) {
 
   const lines = text.replace(/\n$/, '').split('\n')
   const rendered = lines
-    .map(line => `${ctx.indent}${styleText(line, next, ctx)}`)
+    .map(line => `${ctx.indent}${styleText(markdownText(line, ctx), next, ctx)}`)
     .join('\n')
 
   return `${rendered}\n\n`
 }
 
 function renderAdmonition(node: AdmonitionNode, ctx: RenderContext) {
-  const title = styleText(node.title || node.kind, ctx.theme.admonitionTitle, ctx)
+  const title = styleText(markdownText(node.title || node.kind, ctx), ctx.theme.admonitionTitle, ctx)
   const body = renderBlockNodes(node.children ?? [], { ...ctx, indent: `${ctx.indent}  ` }).trimEnd()
   const bodyStyled = body
     ? body.split('\n').map(line => `${ctx.indent}  ${styleText(line, ctx.theme.admonitionBody, ctx)}`).join('\n')
@@ -544,7 +556,7 @@ function renderAdmonition(node: AdmonitionNode, ctx: RenderContext) {
 }
 
 function renderFootnote(node: FootnoteNode, ctx: RenderContext) {
-  const label = `[^${node.id}]:`
+  const label = `[^${markdownText(String(node.id), ctx)}]:`
   const body = renderBlockNodes(node.children ?? [], { ...ctx, indent: '' }).trimEnd()
   if (!body)
     return `${ctx.indent}${label}\n\n`

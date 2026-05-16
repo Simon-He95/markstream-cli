@@ -12,6 +12,17 @@ pnpm add markstream-cli
 # or: yarn add markstream-cli
 ```
 
+## CLI
+
+```bash
+cat README.md | markstream --theme nord --final-only
+markstream ./README.md --no-color
+```
+
+```bash
+markstream --help
+```
+
 ## Usage
 
 One-shot streaming to terminal:
@@ -79,6 +90,10 @@ process.stdout.write(r.push('```ts\nconst x = 1\n'))
 process.stdout.write(r.push('```'))
 await r.flush()
 ```
+
+## Security
+
+Markdown text is sanitized by default before it is written to the terminal, so raw ESC/BEL/C1 control sequences from untrusted input are rendered as visible symbols instead of being executed by the terminal. Set `render.allowControlSequences: true` only for trusted input.
 
 ## Troubleshooting
 

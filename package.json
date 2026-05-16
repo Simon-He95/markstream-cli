@@ -2,7 +2,7 @@
   "name": "markstream-cli",
   "type": "module",
   "version": "0.0.1",
-  "description": "",
+  "description": "Stream Markdown to real terminals with ANSI rendering and async syntax highlighting",
   "author": "Simon He",
   "license": "MIT",
   "funding": "https://github.com/sponsors/Simon-He95",
@@ -12,10 +12,18 @@
     "url": "git+https://github.com/Simon-He95/markstream-cli.git"
   },
   "bugs": "https://github.com/Simon-He95/markstream-cli/issues",
-  "keywords": [],
+  "keywords": [
+    "markdown",
+    "terminal",
+    "ansi",
+    "streaming",
+    "cli",
+    "shiki"
+  ],
   "sideEffects": false,
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     }
@@ -32,19 +40,23 @@
     }
   },
   "bin": {
-    "run": "./cli.mjs"
+    "markstream": "./cli.mjs"
   },
   "files": [
+    "cli.mjs",
     "dist"
   ],
+  "engines": {
+    "node": ">=18.18"
+  },
   "scripts": {
     "build": "tsdown",
     "dev": "npm run build -- --watch src",
     "format": "prettier --cache --write .",
     "lint": "eslint . --cache",
     "lint:fix": "pnpm run lint --fix",
-    "prepublishOnly": "nr build",
-    "release": "bumpp && npm publish",
+    "prepublishOnly": "pnpm -r --filter markstream-terminal --filter . run build && pnpm -r --filter markstream-terminal --filter . --if-present run test && pnpm -r --filter markstream-terminal --filter . run typecheck",
+    "release": "bumpp && pnpm publish -r --filter markstream-terminal --filter . --access public",
     "start": "esno src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

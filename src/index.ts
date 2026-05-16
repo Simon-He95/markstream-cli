@@ -43,4 +43,5 @@ export { createShikiHighlightCode }
 export type { TerminalMarkdownStream, TerminalMarkdownStreamOptions } from './terminal-markdown-stream'
 
 export { streamMarkdownToTerminal }
-export * from 'markstream-terminal'
+export type { TerminalPos, TerminalRange, TerminalSession, TerminalSessionOptions, WritableLike } from 'markstream-terminal'
+export { ansi, applyInsert, applyReplace, createAnchoredTextSurface, createTerminalSession, indexToPos, pos, posToIndex, range, stripAnsi, visibleCellWidth, visibleLength } from 'markstream-terminal'

@@ -3,8 +3,9 @@ import { FontStyle } from '@shikijs/vscode-textmate'
 import c from 'ansis'
 import { codeToTokensBase, getSingletonHighlighter } from 'shiki'
 import { hexApplyAlpha } from './colors'
+import { sanitizeTerminalText } from './sanitize'
 
-export async function codeToANSI(code: string, lang: BundledLanguage, theme: BundledTheme): Promise<string> {
+export async function codeToANSI(code: string, lang: BundledLanguage, theme: BundledTheme, allowControlSequences = false): Promise<string> {
   let output = ''
 
   const lines = await codeToTokensBase(code, {
@@ -17,7 +18,7 @@ export async function codeToANSI(code: string, lang: BundledLanguage, theme: Bun
 
   for (const line of lines) {
     for (const token of line) {
-      let text = token.content
+      let text = allowControlSequences ? token.content : sanitizeTerminalText(token.content)
       const color = token.color || themeReg.fg
       if (color)
         text = c.hex(hexApplyAlpha(color, themeReg.type))(text)
