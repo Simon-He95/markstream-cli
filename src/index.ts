@@ -11,6 +11,12 @@ import { createTerminalMarkdownStream } from './terminal-markdown-stream'
 
 export type { ShikiHighlightOptions } from './shiki-highlight'
 
+interface HighlightMarkdownOptions {
+  parse?: ParseOptions
+  render?: RenderOptions
+  md?: MarkdownIt
+}
+
 let defaultMd: MarkdownIt | undefined
 export function getDefaultMarkdown() {
   defaultMd ??= getMarkdown()
@@ -23,11 +29,63 @@ export function parseMarkdown(content: string, options?: ParseOptions, md: Markd
 
 export function highlightMarkdown(
   content: string,
-  options?: { parse?: ParseOptions, render?: RenderOptions, md?: MarkdownIt },
+  options?: HighlightMarkdownOptions,
 ) {
   const md = options?.md ?? getDefaultMarkdown()
   const nodes = parseMarkdownToStructure(normalizeMarkdownInput(content), md, options?.parse)
   return renderNodesToAnsi(nodes, options?.render)
+}
+
+export async function highlightMarkdownAsync(
+  content: string,
+  options?: HighlightMarkdownOptions,
+) {
+  const md = options?.md ?? getDefaultMarkdown()
+  const nodes = parseMarkdownToStructure(normalizeMarkdownInput(content), md, options?.parse)
+  const highlightCode = options?.render?.highlightCode
+
+  if (!highlightCode)
+    return renderNodesToAnsi(nodes, options?.render)
+
+  const cache = new Map<string, string>()
+  const inflight = new Map<string, Promise<void>>()
+  const pending: Promise<void>[] = []
+  const cachedHighlight = (code: string, language: string): any => {
+    const key = `${language}\u0000${code.replace(/\n$/, '')}`
+    const cached = cache.get(key)
+    if (cached != null)
+      return cached
+
+    if (inflight.has(key))
+      return undefined
+
+    const highlighted = highlightCode(code, language)
+    if (typeof highlighted === 'string') {
+      cache.set(key, highlighted)
+      return highlighted
+    }
+
+    if (highlighted instanceof Promise) {
+      const task = highlighted.then((value) => {
+        cache.set(key, value)
+      })
+      inflight.set(key, task)
+      pending.push(task)
+    }
+
+    return undefined
+  }
+  const render: RenderOptions = {
+    ...options?.render,
+    highlightCode: cachedHighlight,
+  }
+
+  const first = renderNodesToAnsi(nodes, render)
+  if (pending.length === 0)
+    return first
+
+  await Promise.all(pending)
+  return renderNodesToAnsi(nodes, render)
 }
 
 export { renderNodesToAnsi }

@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { ansi, createMarkdownStreamRenderer, highlightMarkdown, parseMarkdown, streamMarkdownToTerminal, stripAnsi } from '../src/index'
+import { ansi, createMarkdownStreamRenderer, highlightMarkdown, highlightMarkdownAsync, parseMarkdown, streamMarkdownToTerminal, stripAnsi } from '../src/index'
 
 function stripTerminalControlSequences(s: string) {
   // Keep visible text + newlines so we can compare against non-terminal renders.
@@ -59,6 +59,8 @@ describe('should', () => {
       '',
       '`x\u009B31m`',
       '',
+      'controls \u0008\u009D\u007F',
+      '',
       '```ts',
       'console.log("\u001B[31m")',
       '```',
@@ -70,8 +72,12 @@ describe('should', () => {
     expect(out).not.toContain('\u001B')
     expect(out).not.toContain('\u0007')
     expect(out).not.toContain('\u009B')
+    expect(out).not.toContain('\u009D')
+    expect(out).not.toContain('\u0008')
+    expect(out).not.toContain('\u007F')
     expect(out).toContain('hello ␛]52;c;pw␇')
     expect(out).toContain('x␛[31m')
+    expect(out).toContain('controls ␈␟␡')
     expect(out).toContain('console.log("␛[31m")')
   })
 
@@ -81,6 +87,17 @@ describe('should', () => {
     })
 
     expect(out).toContain('\u001B[31mred')
+  })
+
+  it('async render waits for async code highlight', async () => {
+    const out = await highlightMarkdownAsync('```ts\nconst x = 1\n```\n', {
+      render: {
+        color: false,
+        highlightCode: async code => `<<${code.toUpperCase()}>>`,
+      },
+    })
+
+    expect(out).toContain('<<CONST X = 1>>')
   })
 
   it('render complex markdown (heading/blockquote/code/footnote/reference)', () => {
@@ -300,6 +317,22 @@ describe('should', () => {
 
     const patches = await r.flush()
     expect(patches.join('')).toContain('<<CONST X = 1>>')
+  })
+
+  it('streaming: async highlight cache key uses sanitized code', async () => {
+    const r = createMarkdownStreamRenderer({
+      render: {
+        color: false,
+        highlightCode: async code => `<<${code}>>`,
+      },
+    })
+
+    r.push('```ts\nconsole.log("\u001B[31m")\n')
+    r.push('```')
+
+    const patches = await r.flush()
+    expect(patches.join('')).toContain('<<console.log("␛[31m")>>')
+    expect(r.getFullRenderedText()).not.toContain('\u001B')
   })
 
   it('streaming: viewportHeight clips rendered output', () => {

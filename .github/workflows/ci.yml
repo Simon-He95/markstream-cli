@@ -20,7 +20,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 9.15.9
 
       - name: Set node
         uses: actions/setup-node@v4
@@ -28,14 +28,11 @@ jobs:
           node-version: 22.x
           cache: pnpm
 
-      - name: Setup
-        run: npm i -g @antfu/ni
-
       - name: Install
-        run: nci
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: nr lint
+        run: pnpm run lint
 
   test:
     runs-on: ${{ matrix.os }}
@@ -62,7 +59,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 9.15.9
 
       - name: Set node ${{ matrix.node_version }}
         uses: actions/setup-node@v4
@@ -70,22 +67,17 @@ jobs:
           node-version: ${{ matrix.node_version }}
           cache: pnpm
 
-      - run: corepack enable
-
-      - name: Setup
-        run: npm i -g @antfu/ni
-
       - name: Install
-        run: nci
+        run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: nr build
+        run: pnpm run build
 
       - name: Test
-        run: nr test
+        run: pnpm run test
 
       - name: Typecheck
-        run: nr typecheck
+        run: pnpm run typecheck
 
   pack-smoke:
     runs-on: ubuntu-latest
@@ -95,7 +87,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 9.15.9
 
       - name: Set node
         uses: actions/setup-node@v4
@@ -103,22 +95,24 @@ jobs:
           node-version: 22.x
           cache: pnpm
 
-      - run: corepack enable
-
       - name: Install
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: pnpm -r --filter markstream-terminal --filter . run build
+        run: |
+          pnpm --dir packages/terminal run build
+          pnpm run build
 
       - name: Pack smoke
         run: |
           PACK_DIR="$(mktemp -d)"
           APP_DIR="$(mktemp -d)"
-          pnpm --filter markstream-terminal pack --pack-destination "$PACK_DIR"
+          pnpm --dir packages/terminal pack --pack-destination "$PACK_DIR"
           pnpm pack --pack-destination "$PACK_DIR"
           npm install --prefix "$APP_DIR" "$PACK_DIR"/markstream-terminal-*.tgz "$PACK_DIR"/markstream-cli-*.tgz
           cd "$APP_DIR"
           node -e "import('markstream-cli').then(m => { if (typeof m.streamMarkdownToTerminal !== 'function') process.exit(1) })"
           node -e "const m = require('markstream-cli'); if (typeof m.streamMarkdownToTerminal !== 'function') process.exit(1)"
           PATH="$APP_DIR/node_modules/.bin:$PATH" markstream --help
+          printf '```ts\nconst x = 1\n```\n' | PATH="$APP_DIR/node_modules/.bin:$PATH" markstream --theme nord > out.txt
+          node -e "const fs = require('node:fs'); const s = fs.readFileSync('out.txt', 'utf8'); if (!s.includes('\x1b[')) process.exit(1)"

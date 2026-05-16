@@ -103,11 +103,11 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
   const pending = new Set<Promise<void>>()
   let patchQueue: string[] = []
 
-  function highlightKey(code: string, language: string) {
+  function highlightKeyFromInput(code: string, language: string) {
     return `${language}\u0000${code.replace(/\n$/, '')}`
   }
 
-  function highlightInput(code: string) {
+  function highlightSource(code: string) {
     return allowControlSequences ? code : sanitizeTerminalText(code)
   }
 
@@ -130,7 +130,7 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
 
   function renderAll(nodes: ParsedNode[]) {
     const cachedHighlight = highlightFn
-      ? (code: string, language: string) => highlightCache.get(highlightKey(code, language))
+      ? (code: string, language: string) => highlightCache.get(highlightKeyFromInput(code, language))
       : undefined
     const full = renderNodesToAnsi(nodes, { ...renderOptions, streaming: true, highlightCode: cachedHighlight as any })
     lastFullRendered = full
@@ -150,7 +150,7 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
 
     const highlight = highlightFn!
     const gen = generation
-    const res = highlight(highlightInput(code), language)
+    const res = highlight(code, language)
 
     if (typeof res === 'string') {
       highlightCache.set(key, res)
@@ -198,12 +198,13 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
 
         const code = String(node.code ?? '').replace(/\n$/, '')
         const language = String(node.language ?? '')
-        const key = highlightKey(code, language)
+        const input = highlightSource(code)
+        const key = highlightKeyFromInput(input, language)
 
         if (skipKey && key === skipKey)
           return
 
-        runHighlightOnce(key, code, language, () => {
+        runHighlightOnce(key, input, language, () => {
           const nodesNow = parseMarkdownToStructure(normalizeMarkdownInput(content), md, parseOptions)
           const nextRendered = renderAll(nodesNow)
           emitPatch(surface.setText(nextRendered))
@@ -253,7 +254,8 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
         const node = lastNode as any
         const code = String(node.code ?? '').replace(/\n$/, '')
         const language = String(node.language ?? '')
-        skipHighlightKey = highlightKey(code, language)
+        const input = highlightSource(code)
+        skipHighlightKey = highlightKeyFromInput(input, language)
       }
 
       scheduleHighlights(nodes, skipHighlightKey)
@@ -267,8 +269,9 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
         const code = String(node.code ?? '').replace(/\n$/, '')
         const language = String(node.language ?? '')
         const startPos = codeStartPos
-        const completedCodeKey = highlightKey(code, language)
-        completedCodeHighlight = runHighlightOnce(completedCodeKey, code, language, () => {
+        const input = highlightSource(code)
+        const completedCodeKey = highlightKeyFromInput(input, language)
+        completedCodeHighlight = runHighlightOnce(completedCodeKey, input, language, () => {
           const nodesNow = parseMarkdownToStructure(normalizeMarkdownInput(content), md, parseOptions)
           const nextRendered = renderAll(nodesNow)
 

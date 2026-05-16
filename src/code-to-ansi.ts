@@ -1,9 +1,11 @@
 import type { BundledLanguage, BundledTheme } from 'shiki'
 import { FontStyle } from '@shikijs/vscode-textmate'
-import c from 'ansis'
+import { Ansis } from 'ansis'
 import { codeToTokensBase, getSingletonHighlighter } from 'shiki'
 import { hexApplyAlpha } from './colors'
 import { sanitizeTerminalText } from './sanitize'
+
+const ansi = new Ansis(1)
 
 export async function codeToANSI(code: string, lang: BundledLanguage, theme: BundledTheme, allowControlSequences = false): Promise<string> {
   let output = ''
@@ -21,16 +23,16 @@ export async function codeToANSI(code: string, lang: BundledLanguage, theme: Bun
       let text = allowControlSequences ? token.content : sanitizeTerminalText(token.content)
       const color = token.color || themeReg.fg
       if (color)
-        text = c.hex(hexApplyAlpha(color, themeReg.type))(text)
+        text = ansi.hex(hexApplyAlpha(color, themeReg.type))(text)
       if (token.fontStyle) {
         if (token.fontStyle & FontStyle.Bold)
-          text = c.bold(text)
+          text = ansi.bold(text)
         if (token.fontStyle & FontStyle.Italic)
-          text = c.italic(text)
+          text = ansi.italic(text)
         if (token.fontStyle & FontStyle.Underline)
-          text = c.underline(text)
+          text = ansi.underline(text)
         if (token.fontStyle & FontStyle.Strikethrough)
-          text = c.strikethrough(text)
+          text = ansi.strikethrough(text)
       }
       output += text
     }

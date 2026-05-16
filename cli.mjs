@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises'
 import process from 'node:process'
-import { createShikiHighlightCode, highlightMarkdown, streamMarkdownToTerminal } from 'markstream-cli'
+import { createShikiHighlightCode, highlightMarkdownAsync, streamMarkdownToTerminal } from 'markstream-cli'
 
 const usage = `Usage:
   markstream [file] [--theme <theme>] [--width <columns>] [--no-color] [--final-only]
@@ -84,12 +84,12 @@ async function main() {
     width: options.width,
   }
 
-  if (options.theme)
+  if (options.theme && options.color !== false)
     render.highlightCode = createShikiHighlightCode({ theme: options.theme })
 
   if (!process.stdout.isTTY) {
     const input = options.file ? await fs.readFile(options.file, 'utf8') : await readStdin()
-    process.stdout.write(highlightMarkdown(input, { render }))
+    process.stdout.write(await highlightMarkdownAsync(input, { render }))
     return
   }
 
