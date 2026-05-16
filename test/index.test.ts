@@ -278,6 +278,20 @@ describe('should', () => {
     // Use `npm run demo:stream` in a real terminal to see the replacement.
   })
 
+  it('streaming: code block containing backticks still rewrites from opening fence', () => {
+    const r = createMarkdownStreamRenderer({
+      render: {
+        color: false,
+        highlightCode: code => `<<${code}>>`,
+      },
+    })
+
+    r.push('```ts\nconst s = "```"\n')
+    const patch = r.push('```')
+
+    expect(stripAnsi(patch)).toContain('```ts\n<<const s = "```">>\n```')
+  })
+
   it('streaming: redraw strategy rewrites from line 0', () => {
     const r = createMarkdownStreamRenderer({
       strategy: 'redraw',

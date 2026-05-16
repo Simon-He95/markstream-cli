@@ -302,7 +302,9 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
       if (isCode && isLoading) {
         lastCodeWasLoading = true
         if (!prevCodeWasLoading) {
-          const startIndex = findLastFenceLineStart(rendered)
+          const startIndex = rendered.startsWith(prevRendered)
+            ? prevRendered.length
+            : findLastFenceLineStart(rendered)
           codeStartPos = (strategy === 'redraw' || startIndex == null) ? null : indexToPos(rendered, startIndex)
         }
       }
