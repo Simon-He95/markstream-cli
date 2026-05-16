@@ -373,6 +373,7 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
     reset() {
       generation += 1
       content = ''
+      lastFullRendered = ''
       lastCodeWasLoading = false
       codeStartPos = null
       highlightCache.clear()

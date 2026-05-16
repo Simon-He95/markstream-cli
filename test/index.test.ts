@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { ansi, createMarkdownStreamRenderer, highlightMarkdown, highlightMarkdownAsync, parseMarkdown, streamMarkdownToTerminal, stripAnsi } from '../src/index'
+import { ansi, createMarkdownStreamRenderer, createTerminalMarkdownStream, highlightMarkdown, highlightMarkdownAsync, parseMarkdown, streamMarkdownToTerminal, stripAnsi } from '../src/index'
 
 const cliPath = fileURLToPath(new URL('../cli.mjs', import.meta.url))
 
@@ -401,6 +401,16 @@ describe('should', () => {
     expect(r.getRenderedText()).toBe('')
   })
 
+  it('streaming: reset clears full rendered text', () => {
+    const r = createMarkdownStreamRenderer({ render: { color: false } })
+
+    r.push('# Old\n')
+    r.reset()
+
+    expect(r.getRenderedText()).toBe('')
+    expect(r.getFullRenderedText()).toBe('')
+  })
+
   it('streaming: async highlight rejection is swallowed', async () => {
     const highlight = deferred<string>()
     const r = createMarkdownStreamRenderer({
@@ -643,6 +653,33 @@ describe('should', () => {
 
     // Final output is printed at the end (with real newlines).
     expect(out).toContain('UNIQUE_FINAL_ONLY_TEST\n')
+  })
+
+  it('createTerminalMarkdownStream: reset does not print stale final output', () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: true,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    const s = createTerminalMarkdownStream({
+      terminal: { stream, clear: false },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: true,
+      loadingIndicator: false,
+      render: { color: false },
+    })
+
+    s.start()
+    s.push('# Old\n')
+    s.reset()
+    written.length = 0
+    s.stop()
+
+    expect(written.join('')).not.toContain('Old')
   })
 
   it('streamMarkdownToTerminal: loadingIndicator shows during streaming but not in final output', async () => {
