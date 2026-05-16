@@ -201,12 +201,14 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
       ...termOptions,
       altScreen: useAltScreenForStreaming || termOptions.altScreen,
       hideCursor: termOptions.hideCursor ?? isTTY,
-      sync: termOptions.sync ?? isTTY,
+      sync: termOptions.sync ?? (sync && isTTY),
     })
   }
 
   if (requireTTY && streamIsTTY === false)
     throw new Error('Terminal markdown streaming requires a TTY stream.')
+  if (!finalOnly && policy.isTTY === false)
+    throw new Error('Streaming patches require a TTY stream; use finalOnly or one-shot rendering for non-TTY output.')
 
   const debugOpt = options.debug
   const debugEnabled = Boolean(typeof debugOpt === 'boolean' ? debugOpt : debugOpt != null)

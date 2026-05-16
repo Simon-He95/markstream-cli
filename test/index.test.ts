@@ -785,22 +785,83 @@ describe('should', () => {
   it('streamMarkdownToTerminal: batches tiny chunks before rendering', async () => {
     const written: string[] = []
     const stream = {
-      isTTY: false,
+      isTTY: true,
       write(chunk: string) {
         written.push(chunk)
       },
     }
 
     await streamMarkdownToTerminal(Array.from('a'.repeat(128)), {
-      terminal: { stream },
+      terminal: { stream, clear: false, hideCursor: false, sync: false },
       requireTTY: false,
       startOnNewLine: false,
       finalOnly: false,
+      sync: false,
       render: { color: false },
     })
 
     expect(written).toHaveLength(1)
     expect(written[0]).toContain('a'.repeat(128))
+  })
+
+  it('streamMarkdownToTerminal: rejects streaming patches for non-TTY output', async () => {
+    const stream = {
+      isTTY: false,
+      write() {},
+    }
+
+    await expect(streamMarkdownToTerminal(['hello'], {
+      terminal: { stream },
+      requireTTY: false,
+      finalOnly: false,
+      render: { color: false },
+    })).rejects.toThrow('Streaming patches require a TTY stream')
+  })
+
+  it('streamMarkdownToTerminal: batch=false pushes chunks immediately', async () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: true,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    await streamMarkdownToTerminal(['a', 'b', 'c'], {
+      terminal: { stream, clear: false, hideCursor: false, sync: false },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: false,
+      sync: false,
+      batch: false,
+      render: { color: false },
+    })
+
+    expect(written).toHaveLength(3)
+    expect(stripTerminalControlSequences(written.join(''))).toContain('abc')
+  })
+
+  it('streamMarkdownToTerminal: custom batch max chars controls flush size', async () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: true,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    await streamMarkdownToTerminal(['ab', 'cd', 'ef'], {
+      terminal: { stream, clear: false, hideCursor: false, sync: false },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: false,
+      sync: false,
+      batch: { intervalMs: 1000, maxChars: 4 },
+      render: { color: false },
+    })
+
+    expect(written).toHaveLength(2)
+    expect(stripTerminalControlSequences(written.join(''))).toContain('abcdef')
   })
 
   it('streamMarkdownToTerminal: async highlight patch is written once', async () => {
@@ -930,6 +991,34 @@ describe('should', () => {
     expect(out).not.toContain('\u001B7')
     expect(out).not.toContain('\u001B8')
     expect(out).not.toContain('\u001B[u')
+  })
+
+  it('createTerminalMarkdownStream: top-level sync=false disables session sync end', () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: true,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    const s = createTerminalMarkdownStream({
+      terminal: { stream, clear: false, hideCursor: false },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: true,
+      loadingIndicator: false,
+      sync: false,
+      render: { color: false },
+    })
+
+    s.start()
+    s.push('# No sync\n')
+    written.length = 0
+    s.stop()
+
+    const out = written.join('')
+    expect(out).not.toContain(ansi.syncEnd)
   })
 
   it('createTerminalMarkdownStream: uses custom stream columns and rows for defaults', () => {

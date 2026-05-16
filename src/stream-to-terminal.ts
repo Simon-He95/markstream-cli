@@ -6,6 +6,14 @@ export type MarkdownChunkSource = string | Iterable<string> | AsyncIterable<stri
 
 export interface StreamMarkdownToTerminalOptions extends TerminalMarkdownStreamOptions {
   /**
+   * Batch source chunks before rendering. Enabled by default unless
+   * `onChunkPushed` is provided.
+   */
+  batch?: boolean | {
+    intervalMs?: number
+    maxChars?: number
+  }
+  /**
    * Optional hook invoked after each chunk is pushed.
    * Useful for demos/tests.
    */
@@ -77,7 +85,10 @@ export async function streamMarkdownToTerminal(
   let buffered = ''
   let batchTimer: ReturnType<typeof setTimeout> | undefined
   let batchError: unknown
-  const shouldBatchChunks = options.onChunkPushed == null
+  const batch = options.batch
+  const shouldBatchChunks = options.onChunkPushed == null && batch !== false
+  const intervalMs = typeof batch === 'object' ? batch.intervalMs ?? batchIntervalMs : batchIntervalMs
+  const maxChars = typeof batch === 'object' ? batch.maxChars ?? batchMaxChars : batchMaxChars
 
   function clearBatchTimer() {
     if (!batchTimer)
@@ -105,7 +116,7 @@ export async function streamMarkdownToTerminal(
       catch (error) {
         batchError = error
       }
-    }, batchIntervalMs)
+    }, intervalMs)
     batchTimer.unref?.()
   }
 
@@ -116,7 +127,7 @@ export async function streamMarkdownToTerminal(
     }
 
     buffered += chunk
-    if (buffered.length >= batchMaxChars)
+    if (buffered.length >= maxChars)
       flushBuffered()
     else
       scheduleFlush()
