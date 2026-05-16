@@ -1,7 +1,7 @@
 {
   "name": "markstream-cli",
   "type": "module",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "packageManager": "pnpm@9.15.9",
   "description": "Stream Markdown to real terminals with ANSI rendering and async syntax highlighting",
   "author": "Simon He",

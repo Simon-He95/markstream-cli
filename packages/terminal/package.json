@@ -1,7 +1,7 @@
 {
   "name": "markstream-terminal",
   "type": "module",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Small, pragmatic ANSI terminal editing helpers (anchored redraw, range replace, streaming-friendly sessions).",
   "author": "Simon He",
   "license": "MIT",
