@@ -25,6 +25,10 @@ function fail(message) {
   process.exitCode = 1
 }
 
+function formatError(error) {
+  return error instanceof Error ? error.message : String(error)
+}
+
 function setInput(options, arg, dashAsStdin = true) {
   if (options.file || options.stdin) {
     fail(`Unexpected argument: ${arg}`)
@@ -111,6 +115,53 @@ async function readStdin() {
   return out
 }
 
+async function streamWithCleanup(streamMarkdownToTerminal, source, options) {
+  let stop = () => {}
+
+  function onSigint() {
+    stop()
+    process.exit(130)
+  }
+
+  function onSigterm() {
+    stop()
+    process.exit(143)
+  }
+
+  function onUncaughtException(error) {
+    stop()
+    process.stderr.write(`${formatError(error)}\n`)
+    process.exit(1)
+  }
+
+  function onUnhandledRejection(reason) {
+    stop()
+    process.stderr.write(`${formatError(reason)}\n`)
+    process.exit(1)
+  }
+
+  process.once('SIGINT', onSigint)
+  process.once('SIGTERM', onSigterm)
+  process.once('uncaughtException', onUncaughtException)
+  process.once('unhandledRejection', onUnhandledRejection)
+
+  try {
+    await streamMarkdownToTerminal(source, {
+      ...options,
+      onSessionCreated(_stream, stopSession) {
+        stop = stopSession
+      },
+    })
+  }
+  finally {
+    process.removeListener('SIGINT', onSigint)
+    process.removeListener('SIGTERM', onSigterm)
+    process.removeListener('uncaughtException', onUncaughtException)
+    process.removeListener('unhandledRejection', onUnhandledRejection)
+    stop()
+  }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2))
   if (!options)
@@ -153,7 +204,7 @@ async function main() {
     ? await fs.readFile(options.file, 'utf8')
     : process.stdin.setEncoding('utf8')
 
-  await streamMarkdownToTerminal(source, {
+  await streamWithCleanup(streamMarkdownToTerminal, source, {
     finalOnly: options.finalOnly,
     requireTTY: false,
     render,

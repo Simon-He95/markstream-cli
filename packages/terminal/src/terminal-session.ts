@@ -5,6 +5,8 @@ import { ansi, createAnchoredTextSurface } from './terminal'
 export interface WritableLike {
   write: (chunk: string) => unknown
   isTTY?: boolean
+  columns?: number
+  rows?: number
 }
 
 export interface TerminalSessionOptions {
@@ -86,7 +88,10 @@ export function createTerminalSession(options: TerminalSessionOptions = {}): Ter
         writeRaw(ansi.hideCursor)
     },
     stop() {
-      writeRaw(`${ansi.syncEnd}${ansi.showCursor}`)
+      if (sync)
+        writeRaw(ansi.syncEnd)
+      if (hideCursor)
+        writeRaw(ansi.showCursor)
       if (altScreen)
         writeRaw(ansi.altScreenExit)
     },

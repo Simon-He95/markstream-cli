@@ -95,7 +95,7 @@ export interface TerminalMarkdownStreamOptions extends Omit<MarkdownStreamRender
   width?: number | ((columns: number) => number)
   /**
    * Auto height used to set streaming viewport (`viewportHeight`) when `finalOnly`
-   * is enabled. If omitted, uses `process.stdout.rows - 2` with a sane clamp.
+   * is enabled. If omitted, uses the target stream rows minus two with a sane clamp.
    */
   height?: number | ((rows: number) => number)
   /**
@@ -142,7 +142,8 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
   const finalOnly = options.finalOnly ?? true
 
   let term: TerminalSession
-  let streamIsTTY: boolean | undefined
+  let streamIsTTY = false
+  let targetStream: any = process.stdout
   let policy: TerminalStreamingPolicy = {
     isTTY: true,
     useAltScreenForStreaming: false,
@@ -160,10 +161,14 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
   }
   else {
     const termOptions = options.terminal ?? {}
-    streamIsTTY = termOptions.stream?.isTTY ?? (process.stdout as any)?.isTTY
-    const isTTY = streamIsTTY !== false
+    const hasCustomStream = termOptions.stream != null
+    targetStream = termOptions.stream ?? (process.stdout as any)
+    streamIsTTY = hasCustomStream
+      ? targetStream?.isTTY === true
+      : (process.stdout as any)?.isTTY === true
+    const isTTY = streamIsTTY
 
-    const rows = Math.max(0, Number((process.stdout as any)?.rows ?? 0))
+    const rows = Math.max(0, Number(targetStream?.rows ?? (process.stdout as any)?.rows ?? 0))
 
     const resolvedHeight = resolveNumberOption(options.height, rows, defaultHeightFromRows(rows || 24))
     const resolvedViewportHeight = (options.viewportHeight == null && finalOnly && isTTY) ? resolvedHeight : options.viewportHeight
@@ -192,11 +197,18 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
       strategy,
     }
 
-    term = createTerminalSession({ ...termOptions, altScreen: useAltScreenForStreaming || termOptions.altScreen })
+    term = createTerminalSession({
+      ...termOptions,
+      altScreen: useAltScreenForStreaming || termOptions.altScreen,
+      hideCursor: termOptions.hideCursor ?? isTTY,
+      sync: termOptions.sync ?? (sync && isTTY),
+    })
   }
 
   if (requireTTY && streamIsTTY === false)
     throw new Error('Terminal markdown streaming requires a TTY stream.')
+  if (!finalOnly && policy.isTTY === false)
+    throw new Error('Streaming patches require a TTY stream; use finalOnly or one-shot rendering for non-TTY output.')
 
   const debugOpt = options.debug
   const debugEnabled = Boolean(typeof debugOpt === 'boolean' ? debugOpt : debugOpt != null)
@@ -222,6 +234,8 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
   function writePatch(patch: string) {
     if (!patch)
       return
+    if (finalOnly && !policy.isTTY)
+      return
     patchCount += 1
     patchBytes += patch.length
     const lfBefore = countChar(patch, '\n')
@@ -245,7 +259,7 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
       if (shouldLog)
         debugLog(`[markstream] patch#${patchCount} bytes=${patch.length} lf(before=${lfBefore},after=${lfAfter})`)
     }
-    if (sync)
+    if (sync && policy.isTTY)
       term.writeRaw(`${ansi.syncStart}${patch}${ansi.syncEnd}`)
     else
       term.writeRaw(patch)
@@ -253,8 +267,12 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
 
   const render = { ...(options.render ?? {}) }
 
+  function currentColumns() {
+    return Math.max(0, Number(targetStream?.columns ?? (process.stdout as any)?.columns ?? 0))
+  }
+
   function resolveWidth() {
-    const columns = Math.max(0, Number((process.stdout as any)?.columns ?? 0))
+    const columns = currentColumns()
     const resolved = resolveNumberOption(options.width, columns, render.width ?? defaultWidthFromColumns(columns || 80))
     return resolved
   }
@@ -397,7 +415,7 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
       }
       // `startOnNewLine` is meant to avoid overwriting prompts. When using the
       // alternate screen buffer, it isn't necessary and just wastes a line.
-      if (startOnNewLine && !policy.useAltScreenForStreaming)
+      if (startOnNewLine && policy.isTTY && !policy.useAltScreenForStreaming)
         term.writeRaw('\n')
 
       startLoading()
@@ -411,7 +429,8 @@ export function createTerminalMarkdownStream(options: TerminalMarkdownStreamOpti
       // being left in scrollback (when combined with no-scroll patches).
       if (finalRendered && !policy.useAltScreenForStreaming) {
         const normalized = finalRendered.endsWith('\n') ? finalRendered : `${finalRendered}\n`
-        term.writeRaw(`${ansi.restoreCursor}${ansi.eraseToEnd}${normalized}`)
+        const base = policy.anchor === 'home' ? ansi.cursorHome : ansi.restoreCursor
+        term.writeRaw(policy.isTTY ? `${base}${ansi.eraseToEnd}${normalized}` : normalized)
         term.stop()
         return
       }

@@ -88,7 +88,8 @@ const r = createMarkdownStreamRenderer({
 process.stdout.write(r.push('# Title\n\nHello **world**.\n'))
 process.stdout.write(r.push('```ts\nconst x = 1\n'))
 process.stdout.write(r.push('```'))
-await r.flush()
+for (const patch of await r.flush())
+  process.stdout.write(patch)
 ```
 
 ## Security

@@ -31,7 +31,7 @@ import type {
 import type { AnsiStyle, ColorMode } from './ansi'
 import { visibleCellWidth } from 'markstream-terminal'
 import { applyAnsiStyle, isColorEnabled, mergeAnsiStyle } from './ansi'
-import { callHighlight } from './highlight'
+import { callHighlight, isPromiseLike } from './highlight'
 import { findStreamingLoadingCodeBlock } from './markdown-node-utils'
 import { sanitizeTerminalText } from './sanitize'
 
@@ -485,7 +485,7 @@ function renderCodeBlockBody(code: string, language: string, node: CodeBlockNode
 
   if (allowHighlight && ctx.highlightCode) {
     const highlighted = callHighlight(ctx.highlightCode, markdownText(code, ctx), language, ctx.onHighlightError)
-    if (highlighted instanceof Promise)
+    if (isPromiseLike(highlighted))
       return isDiff ? renderDiffCode(code, ctx) : renderPlainCode(code, ctx)
 
     const normalized = highlighted?.replace(/\n$/, '')

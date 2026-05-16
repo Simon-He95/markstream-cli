@@ -24,6 +24,14 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+function resolvedThenable<T>(value: T): PromiseLike<T> {
+  return {
+    then(onfulfilled, onrejected) {
+      return Promise.resolve(value).then(onfulfilled, onrejected)
+    },
+  }
+}
+
 describe('should', () => {
   it('cli rejects invalid options before rendering', () => {
     for (const { args, message } of [
@@ -213,6 +221,29 @@ describe('should', () => {
     })
 
     expect(out).toContain('<<CONST X = 1>>')
+  })
+
+  it('async render waits for promise-like code highlight', async () => {
+    const out = await highlightMarkdownAsync('```ts\nconst x = 1\n```\n', {
+      render: {
+        color: false,
+        highlightCode: code => resolvedThenable(`<<${code.toUpperCase()}>>`) as any,
+      },
+    })
+
+    expect(out).toContain('<<CONST X = 1>>')
+  })
+
+  it('sync render falls back for promise-like code highlight', () => {
+    const out = highlightMarkdown('```ts\nconst x = 1\n```\n', {
+      render: {
+        color: false,
+        highlightCode: code => resolvedThenable(`<<${code.toUpperCase()}>>`) as any,
+      },
+    })
+
+    expect(out).toContain('const x = 1')
+    expect(out).not.toContain('<<CONST X = 1>>')
   })
 
   it('async render swallows async highlight rejection', async () => {
@@ -409,6 +440,21 @@ describe('should', () => {
 
     const patches = await r.flush()
     expect(patches).toEqual(['\u001B8\u001B[u```ts\u001B[K\n<<CONST X = 1>>\u001B[K\n```\u001B[K\n\u001B[J'])
+  })
+
+  it('streaming: promise-like highlight replaces later', async () => {
+    const r = createMarkdownStreamRenderer({
+      render: {
+        color: false,
+        highlightCode: code => resolvedThenable(`<<${code.toUpperCase()}>>`) as any,
+      },
+    })
+
+    r.push('```ts\nconst x = 1\n')
+    r.push('```')
+
+    const patches = await r.flush()
+    expect(patches.join('')).toContain('<<CONST X = 1>>')
   })
 
   it('streaming: async highlight replaces later (redraw strategy)', async () => {
@@ -663,6 +709,161 @@ describe('should', () => {
     expect(out).toContain('<<CONST X = 1>>')
   })
 
+  it('streamMarkdownToTerminal: non-TTY default finalOnly writes final output without terminal controls', async () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: false,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+    const md = '```ts\nconst x = 1\n```\n'
+
+    async function* chunks() {
+      yield '```ts\nconst x = 1\n'
+      yield '```\n'
+    }
+
+    await streamMarkdownToTerminal(chunks(), {
+      terminal: { stream },
+      requireTTY: false,
+      render: {
+        color: false,
+        highlightCode: async code => `<<${code.toUpperCase()}>>`,
+      },
+    })
+
+    const out = written.join('')
+    const expected = await highlightMarkdownAsync(md, {
+      render: {
+        color: false,
+        highlightCode: async code => `<<${code.toUpperCase()}>>`,
+      },
+    })
+    expect(out).toBe(expected)
+    expect(out).not.toContain('\u001B[')
+    expect(out).not.toContain('\u001B7')
+    expect(out).not.toContain('\u001B8')
+  })
+
+  it('streamMarkdownToTerminal: custom stream without isTTY is treated as non-TTY', async () => {
+    const written: string[] = []
+    const stream = {
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+    const md = '```ts\nconst x = 1\n```\n'
+
+    async function* chunks() {
+      yield '```ts\nconst x = 1\n'
+      yield '```\n'
+    }
+
+    await streamMarkdownToTerminal(chunks(), {
+      terminal: { stream },
+      requireTTY: false,
+      render: {
+        color: false,
+        highlightCode: async code => `<<${code.toUpperCase()}>>`,
+      },
+    })
+
+    const out = written.join('')
+    const expected = await highlightMarkdownAsync(md, {
+      render: {
+        color: false,
+        highlightCode: async code => `<<${code.toUpperCase()}>>`,
+      },
+    })
+    expect(out).toBe(expected)
+    expect(out).not.toContain('\u001B[')
+    expect(out).not.toContain('\u001B7')
+    expect(out).not.toContain('\u001B8')
+  })
+
+  it('streamMarkdownToTerminal: batches tiny chunks before rendering', async () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: true,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    await streamMarkdownToTerminal(Array.from('a'.repeat(128)), {
+      terminal: { stream, clear: false, hideCursor: false, sync: false },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: false,
+      sync: false,
+      render: { color: false },
+    })
+
+    expect(written).toHaveLength(1)
+    expect(written[0]).toContain('a'.repeat(128))
+  })
+
+  it('streamMarkdownToTerminal: rejects streaming patches for non-TTY output', async () => {
+    const stream = {
+      isTTY: false,
+      write() {},
+    }
+
+    await expect(streamMarkdownToTerminal(['hello'], {
+      terminal: { stream },
+      requireTTY: false,
+      finalOnly: false,
+      render: { color: false },
+    })).rejects.toThrow('Streaming patches require a TTY stream')
+  })
+
+  it('streamMarkdownToTerminal: batch=false pushes chunks immediately', async () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: true,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    await streamMarkdownToTerminal(['a', 'b', 'c'], {
+      terminal: { stream, clear: false, hideCursor: false, sync: false },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: false,
+      sync: false,
+      batch: false,
+      render: { color: false },
+    })
+
+    expect(written).toHaveLength(3)
+    expect(stripTerminalControlSequences(written.join(''))).toContain('abc')
+  })
+
+  it('streamMarkdownToTerminal: custom batch max chars controls flush size', async () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: true,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    await streamMarkdownToTerminal(['ab', 'cd', 'ef'], {
+      terminal: { stream, clear: false, hideCursor: false, sync: false },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: false,
+      sync: false,
+      batch: { intervalMs: 1000, maxChars: 4 },
+      render: { color: false },
+    })
+
+    expect(written).toHaveLength(2)
+    expect(stripTerminalControlSequences(written.join(''))).toContain('abcdef')
+  })
+
   it('streamMarkdownToTerminal: async highlight patch is written once', async () => {
     const written: string[] = []
     const stream = {
@@ -758,6 +959,131 @@ describe('should', () => {
     s.stop()
 
     expect(written.join('')).not.toContain('Old')
+  })
+
+  it('createTerminalMarkdownStream: finalOnly anchor=home uses cursor home for final rewrite', () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: true,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    const s = createTerminalMarkdownStream({
+      terminal: { stream, clear: false, hideCursor: false, sync: false },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: true,
+      loadingIndicator: false,
+      anchor: 'home',
+      sync: false,
+      render: { color: false },
+    })
+
+    s.start()
+    s.push('# Home\n')
+    written.length = 0
+    s.stop()
+
+    const out = written.join('')
+    expect(out).toContain(ansi.cursorHome)
+    expect(out).not.toContain('\u001B7')
+    expect(out).not.toContain('\u001B8')
+    expect(out).not.toContain('\u001B[u')
+  })
+
+  it('createTerminalMarkdownStream: top-level sync=false disables session sync end', () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: true,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    const s = createTerminalMarkdownStream({
+      terminal: { stream, clear: false, hideCursor: false },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: true,
+      loadingIndicator: false,
+      sync: false,
+      render: { color: false },
+    })
+
+    s.start()
+    s.push('# No sync\n')
+    written.length = 0
+    s.stop()
+
+    const out = written.join('')
+    expect(out).not.toContain(ansi.syncEnd)
+  })
+
+  it('createTerminalMarkdownStream: uses custom stream columns and rows for defaults', () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: true,
+      columns: 30,
+      rows: 8,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    const s = createTerminalMarkdownStream({
+      terminal: { stream, clear: false, hideCursor: false, sync: false },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: true,
+      loadingIndicator: true,
+      sync: false,
+      render: { color: false },
+    })
+
+    s.start()
+    s.push('---\n')
+    const streamingOut = written.join('')
+    written.length = 0
+    s.stop()
+
+    const rule = stripTerminalControlSequences(written.join('')).split('\n').find(line => line.includes('─')) ?? ''
+    expect(rule).toHaveLength(28)
+    expect(streamingOut).toContain(`${ansi.restoreCursor}${ansi.cursorDown(5)}${ansi.carriageReturn}`)
+  })
+
+  it('createTerminalMarkdownStream: reads custom stream columns before each push', () => {
+    const written: string[] = []
+    const seenColumns: number[] = []
+    const stream = {
+      isTTY: true,
+      columns: 30,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    const s = createTerminalMarkdownStream({
+      terminal: { stream, clear: false, hideCursor: false, sync: false },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: false,
+      sync: false,
+      width(columns) {
+        seenColumns.push(columns)
+        return columns - 2
+      },
+      render: { color: false },
+    })
+
+    s.start()
+    s.push('a')
+    stream.columns = 20
+    s.push('b')
+    s.stop()
+
+    expect(seenColumns).toEqual([30, 20])
   })
 
   it('streamMarkdownToTerminal: loadingIndicator shows during streaming but not in final output', async () => {

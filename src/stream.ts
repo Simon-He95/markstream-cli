@@ -3,7 +3,7 @@ import type { MarkdownIt, ParsedNode, ParseOptions } from 'stream-markdown-parse
 import type { RenderOptions } from './render'
 import { createAnchoredTextSurface, indexToPos, posToIndex } from 'markstream-terminal'
 import { getMarkdown, parseMarkdownToStructure } from 'stream-markdown-parser'
-import { callHighlight } from './highlight'
+import { callHighlight, isPromiseLike } from './highlight'
 import { findStreamingLoadingCodeBlock } from './markdown-node-utils'
 import { normalizeMarkdownInput } from './normalize-markdown-input'
 import { renderNodesToAnsi } from './render'
@@ -158,7 +158,7 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
       return res
     }
 
-    if (res instanceof Promise) {
+    if (isPromiseLike<string | undefined>(res)) {
       const task = res.then((highlighted) => {
         if (gen !== generation)
           return
@@ -344,7 +344,7 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
         && isCode
         && !isLoading
         && prevCodeWasLoading
-        && completedCodeHighlight instanceof Promise
+        && isPromiseLike(completedCodeHighlight)
       ) {
         lastCodeWasLoading = false
         codeStartPos = null
