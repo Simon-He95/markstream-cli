@@ -42,10 +42,11 @@ describe('should', () => {
     expect(result.status).toBe(0)
     expect(result.stdout).toContain('Usage:')
     expect(result.stdout).toContain('--color')
+    expect(result.stdout).toContain('--no-final-only')
   })
 
   it('cli renders stdin in non-tty mode', () => {
-    const result = spawnSync(process.execPath, [cliPath, '--no-color'], {
+    const result = spawnSync(process.execPath, [cliPath, '--no-color', '--no-final-only'], {
       encoding: 'utf8',
       input: '# Hello\n',
     })

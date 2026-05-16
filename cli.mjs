@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import process from 'node:process'
 
 const usage = `Usage:
-  markstream [file] [--theme <theme>] [--width <columns>] [--no-color] [--final-only]
+  markstream [file] [--theme <theme>] [--width <columns>] [--no-color] [--final-only] [--no-final-only]
 
 Options:
   --theme <theme>   Enable Shiki ANSI highlighting, even when stdout is piped.
@@ -11,6 +11,7 @@ Options:
   --no-color        Disable all ANSI output.
   --width <columns> Render width.
   --final-only      Keep only final render in normal terminal scrollback.
+  --no-final-only   Leave streaming frames in normal terminal output.
 
 Examples:
   cat README.md | markstream --theme nord --final-only
@@ -45,6 +46,9 @@ function parseArgs(args) {
     }
     else if (arg === '--final-only') {
       options.finalOnly = true
+    }
+    else if (arg === '--no-final-only') {
+      options.finalOnly = false
     }
     else if (arg === '--theme') {
       const raw = args[++i]

@@ -2,8 +2,6 @@
 
 Stream-render Markdown in a real terminal (with optional async code highlighting).
 
-![demo](./demo.gif)
-
 ## Install
 
 ```bash

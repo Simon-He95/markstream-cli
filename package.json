@@ -59,7 +59,7 @@
     "prepublishOnly": "pnpm -r --filter markstream-terminal --filter . run build && pnpm -r --filter markstream-terminal --filter . --if-present run test && pnpm -r --filter markstream-terminal --filter . run typecheck",
     "release": "bumpp && pnpm publish -r --filter markstream-terminal --filter . --access public",
     "start": "esno src/index.ts",
-    "test": "vitest run",
+    "test": "pnpm run build:terminal && pnpm run build && vitest run",
     "typecheck": "tsc --noEmit",
     "demo:stream": "tsx scripts/demo-stream.ts",
     "demo:type": "tsx scripts/demo-type.ts",
