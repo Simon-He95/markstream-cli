@@ -95,7 +95,7 @@ await r.flush()
 
 ## Security
 
-Markdown text is sanitized by default before it is written to the terminal, so raw ESC/BEL/C1 control sequences from untrusted input are rendered as visible symbols instead of being executed by the terminal. Set `render.allowControlSequences: true` only for trusted input.
+Markdown text is sanitized by default before it is written to the terminal, so raw ESC/BEL/C1 control sequences from untrusted input are rendered as visible symbols instead of being executed by the terminal. Custom `highlightCode` functions receive sanitized code by default; set `render.allowControlSequences: true` only when both the Markdown input and highlighter output are trusted.
 
 ## Troubleshooting
 

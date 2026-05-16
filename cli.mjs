@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises'
 import process from 'node:process'
-import { createShikiHighlightCode, highlightMarkdownAsync, streamMarkdownToTerminal } from 'markstream-cli'
 
 const usage = `Usage:
   markstream [file] [--theme <theme>] [--width <columns>] [--no-color] [--final-only]
@@ -82,6 +81,12 @@ async function main() {
   const options = parseArgs(process.argv.slice(2))
   if (!options)
     return
+
+  const {
+    createShikiHighlightCode,
+    highlightMarkdownAsync,
+    streamMarkdownToTerminal,
+  } = await import('markstream-cli')
 
   const render = {
     color: options.color,
