@@ -2,8 +2,6 @@
 
 Stream-render Markdown in a real terminal (with optional async code highlighting).
 
-![demo](./demo.gif)
-
 ## Install
 
 ```bash
@@ -11,6 +9,19 @@ pnpm add markstream-cli
 # or: npm i markstream-cli
 # or: yarn add markstream-cli
 ```
+
+## CLI
+
+```bash
+cat README.md | markstream --theme nord --final-only
+markstream ./README.md --no-color
+```
+
+```bash
+markstream --help
+```
+
+`--theme <theme>` enables Shiki ANSI highlighting, even when stdout is piped. Use `--no-color` to disable ANSI styling and syntax highlighting.
 
 ## Usage
 
@@ -79,6 +90,14 @@ process.stdout.write(r.push('```ts\nconst x = 1\n'))
 process.stdout.write(r.push('```'))
 await r.flush()
 ```
+
+## Security
+
+Markdown text is sanitized by default before it is written to the terminal, so raw ESC/BEL/C1 control sequences from untrusted input are rendered as visible symbols instead of being executed by the terminal. Custom `highlightCode` functions receive sanitized code by default unless `render.allowControlSequences` is enabled.
+
+To allow raw control sequences from Markdown code blocks to reach Shiki output, enable both `render.allowControlSequences: true` and `createShikiHighlightCode({ theme, allowControlSequences: true })`. The render option controls whether raw Markdown input is sanitized before it reaches the highlighter; the Shiki option controls whether Shiki token content is sanitized before ANSI styling is applied.
+
+The string returned from a custom highlighter is treated as trusted terminal output, because highlighters are expected to emit ANSI styling; use trusted highlighters only.
 
 ## Troubleshooting
 

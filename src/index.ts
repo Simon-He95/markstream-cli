@@ -2,6 +2,7 @@ import type { MarkdownIt, ParsedNode, ParseOptions } from 'stream-markdown-parse
 import type { RenderOptions } from './render'
 import type { MarkdownStreamRenderer, MarkdownStreamRendererOptions } from './stream'
 import { getMarkdown, parseMarkdownToStructure } from 'stream-markdown-parser'
+import { callHighlight } from './highlight'
 import { normalizeMarkdownInput } from './normalize-markdown-input'
 import { renderNodesToAnsi } from './render'
 import { createShikiHighlightCode } from './shiki-highlight'
@@ -10,6 +11,12 @@ import { streamMarkdownToTerminal } from './stream-to-terminal'
 import { createTerminalMarkdownStream } from './terminal-markdown-stream'
 
 export type { ShikiHighlightOptions } from './shiki-highlight'
+
+export interface HighlightMarkdownOptions {
+  parse?: ParseOptions
+  render?: RenderOptions
+  md?: MarkdownIt
+}
 
 let defaultMd: MarkdownIt | undefined
 export function getDefaultMarkdown() {
@@ -23,11 +30,66 @@ export function parseMarkdown(content: string, options?: ParseOptions, md: Markd
 
 export function highlightMarkdown(
   content: string,
-  options?: { parse?: ParseOptions, render?: RenderOptions, md?: MarkdownIt },
+  options?: HighlightMarkdownOptions,
 ) {
   const md = options?.md ?? getDefaultMarkdown()
   const nodes = parseMarkdownToStructure(normalizeMarkdownInput(content), md, options?.parse)
   return renderNodesToAnsi(nodes, options?.render)
+}
+
+export async function highlightMarkdownAsync(
+  content: string,
+  options?: HighlightMarkdownOptions,
+) {
+  const md = options?.md ?? getDefaultMarkdown()
+  const nodes = parseMarkdownToStructure(normalizeMarkdownInput(content), md, options?.parse)
+  const highlightCode = options?.render?.highlightCode
+
+  if (!highlightCode)
+    return renderNodesToAnsi(nodes, options?.render)
+
+  const cache = new Map<string, string>()
+  const inflight = new Map<string, Promise<void>>()
+  const pending: Promise<void>[] = []
+  const cachedHighlight = (code: string, language: string): any => {
+    const key = `${language}\u0000${code.replace(/\n$/, '')}`
+    const cached = cache.get(key)
+    if (cached != null)
+      return cached
+
+    if (inflight.has(key))
+      return undefined
+
+    const highlighted = callHighlight(highlightCode, code, language, options?.render?.onHighlightError)
+    if (typeof highlighted === 'string') {
+      cache.set(key, highlighted)
+      return highlighted
+    }
+
+    if (highlighted instanceof Promise) {
+      const task = highlighted.then((value) => {
+        if (value != null)
+          cache.set(key, value)
+      }).catch(() => {
+        // ignore highlight failures; fallback to plain code
+      })
+      inflight.set(key, task)
+      pending.push(task)
+    }
+
+    return undefined
+  }
+  const render: RenderOptions = {
+    ...options?.render,
+    highlightCode: cachedHighlight,
+  }
+
+  const first = renderNodesToAnsi(nodes, render)
+  if (pending.length === 0)
+    return first
+
+  await Promise.allSettled(pending)
+  return renderNodesToAnsi(nodes, render)
 }
 
 export { renderNodesToAnsi }
@@ -43,4 +105,5 @@ export { createShikiHighlightCode }
 export type { TerminalMarkdownStream, TerminalMarkdownStreamOptions } from './terminal-markdown-stream'
 
 export { streamMarkdownToTerminal }
-export * from 'markstream-terminal'
+export type { TerminalPos, TerminalRange, TerminalSession, TerminalSessionOptions, WritableLike } from 'markstream-terminal'
+export { ansi, applyInsert, applyReplace, createAnchoredTextSurface, createTerminalSession, indexToPos, pos, posToIndex, range, stripAnsi, visibleCellWidth, visibleLength } from 'markstream-terminal'

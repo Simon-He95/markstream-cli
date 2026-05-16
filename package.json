@@ -2,7 +2,8 @@
   "name": "markstream-cli",
   "type": "module",
   "version": "0.0.1",
-  "description": "",
+  "packageManager": "pnpm@9.15.9",
+  "description": "Stream Markdown to real terminals with ANSI rendering and async syntax highlighting",
   "author": "Simon He",
   "license": "MIT",
   "funding": "https://github.com/sponsors/Simon-He95",
@@ -12,15 +13,23 @@
     "url": "git+https://github.com/Simon-He95/markstream-cli.git"
   },
   "bugs": "https://github.com/Simon-He95/markstream-cli/issues",
-  "keywords": [],
+  "keywords": [
+    "markdown",
+    "terminal",
+    "ansi",
+    "streaming",
+    "cli",
+    "shiki"
+  ],
   "sideEffects": false,
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     }
   },
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "typesVersions": {
@@ -32,45 +41,49 @@
     }
   },
   "bin": {
-    "run": "./cli.mjs"
+    "markstream": "./cli.mjs"
   },
   "files": [
+    "cli.mjs",
     "dist"
   ],
+  "engines": {
+    "node": ">=18.18"
+  },
   "scripts": {
     "build": "tsdown",
     "dev": "npm run build -- --watch src",
     "format": "prettier --cache --write .",
     "lint": "eslint . --cache",
     "lint:fix": "pnpm run lint --fix",
-    "prepublishOnly": "nr build",
-    "release": "bumpp && npm publish",
+    "prepublishOnly": "pnpm -r --include-workspace-root --filter markstream-terminal --filter . run build && pnpm -r --include-workspace-root --filter markstream-terminal --filter . --if-present run test && pnpm -r --include-workspace-root --filter markstream-terminal --filter . run typecheck",
+    "release": "bumpp package.json packages/terminal/package.json && pnpm publish -r --filter markstream-terminal --filter . --access public",
     "start": "esno src/index.ts",
-    "test": "vitest run",
+    "test": "pnpm run build:terminal && pnpm run build && vitest run",
     "typecheck": "tsc --noEmit",
     "demo:stream": "tsx scripts/demo-stream.ts",
     "demo:type": "tsx scripts/demo-type.ts",
     "demo:replace": "tsx scripts/demo-replace.ts",
     "demo:highlight-md": "tsx scripts/demo-highlight-markdown-stream.ts",
     "demo:all-color": "tsx scripts/demo-all-syntax-color-stream.ts",
-    "build:terminal": "npm --prefix packages/terminal run build"
+    "build:terminal": "pnpm --dir packages/terminal run build"
   },
   "dependencies": {
     "@shikijs/vscode-textmate": "^10.0.2",
-    "ansis": "^4.2.0",
+    "ansis": "^4.3.0",
     "markstream-terminal": "workspace:^",
-    "shiki": "^3.20.0",
+    "shiki": "^3.23.0",
     "stream-markdown-parser": "^0.0.51"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^4.19.0",
-    "@sxzz/prettier-config": "^2.2.6",
+    "@sxzz/prettier-config": "^2.3.1",
     "@types/node": "^18.19.130",
     "bumpp": "^8.2.1",
-    "eslint": "^9.39.2",
+    "eslint": "^9.39.4",
     "lint-staged": "^13.3.0",
     "picocolors": "^1.1.1",
-    "prettier": "^3.7.4",
+    "prettier": "^3.8.3",
     "rimraf": "^3.0.2",
     "tsdown": "^0.9.9",
     "tsx": "^3.14.0",

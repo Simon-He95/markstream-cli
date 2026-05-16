@@ -1,13 +1,131 @@
+import type { HighlightMarkdownOptions } from '../src/index'
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { ansi, createMarkdownStreamRenderer, highlightMarkdown, parseMarkdown, streamMarkdownToTerminal, stripAnsi } from '../src/index'
+import { ansi, createMarkdownStreamRenderer, createShikiHighlightCode, createTerminalMarkdownStream, highlightMarkdown, highlightMarkdownAsync, parseMarkdown, streamMarkdownToTerminal, stripAnsi } from '../src/index'
+
+const cliPath = fileURLToPath(new URL('../cli.mjs', import.meta.url))
 
 function stripTerminalControlSequences(s: string) {
   // Keep visible text + newlines so we can compare against non-terminal renders.
   return stripAnsi(s)
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 describe('should', () => {
+  it('cli rejects invalid options before rendering', () => {
+    for (const { args, message } of [
+      { args: ['--theme'], message: 'Missing value for --theme' },
+      { args: ['--theme', '--no-color'], message: 'Missing value for --theme' },
+      { args: ['--width', 'abc'], message: 'Missing valid positive integer for --width' },
+      { args: ['--unknown'], message: 'Unknown option: --unknown' },
+    ]) {
+      const result = spawnSync(process.execPath, [cliPath, ...args], { encoding: 'utf8' })
+
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain(message)
+    }
+  })
+
+  it('cli prints help', () => {
+    const result = spawnSync(process.execPath, [cliPath, '--help'], { encoding: 'utf8' })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('Usage:')
+    expect(result.stdout).toContain('--color')
+    expect(result.stdout).toContain('--no-final-only')
+  })
+
+  it('cli renders stdin in non-tty mode', () => {
+    const result = spawnSync(process.execPath, [cliPath, '--no-color', '--no-final-only'], {
+      encoding: 'utf8',
+      input: '# Hello\n',
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('Hello')
+  })
+
+  it('cli accepts explicit stdin marker', () => {
+    const result = spawnSync(process.execPath, [cliPath, '-', '--no-color'], {
+      encoding: 'utf8',
+      input: '# Hello\n',
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('Hello')
+  })
+
+  it('cli renders a file in non-tty mode', () => {
+    const fixturePath = fileURLToPath(new URL('./fixtures/complex.md', import.meta.url))
+    const result = spawnSync(process.execPath, [cliPath, fixturePath, '--no-color'], {
+      encoding: 'utf8',
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('Footer paragraph.')
+  })
+
+  it('cli accepts dash-prefixed files after --', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'markstream-cli-'))
+    try {
+      fs.writeFileSync(path.join(dir, '--weird-file.md'), '# Weird\n')
+      const result = spawnSync(process.execPath, [cliPath, '--no-color', '--', '--weird-file.md'], {
+        cwd: dir,
+        encoding: 'utf8',
+      })
+
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain('Weird')
+    }
+    finally {
+      fs.rmSync(dir, { force: true, recursive: true })
+    }
+  })
+
+  it('cli renders themed ANSI output when stdout is piped', () => {
+    const result = spawnSync(process.execPath, [cliPath, '--theme', 'nord'], {
+      encoding: 'utf8',
+      input: '```ts\nconst x = 1\n```\n',
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('\u001B[')
+  })
+
+  it('cli warns when theme highlighting falls back to plain code', () => {
+    const result = spawnSync(process.execPath, [cliPath, '--theme', 'missing-theme'], {
+      encoding: 'utf8',
+      input: '```ts\nconst x = 1\n```\n',
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stderr).toContain('Warning: failed to apply theme "missing-theme"')
+    expect(result.stdout).toContain('const x = 1')
+  })
+
+  it('cli accepts equals option values', () => {
+    const result = spawnSync(process.execPath, [cliPath, '--theme=nord', '--width=80'], {
+      encoding: 'utf8',
+      input: '```ts\nconst x = 1\n```\n',
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('\u001B[')
+  })
+
   it('parse markdown to nodes', () => {
     const nodes = parseMarkdown('# Hello World')
     expect(nodes[0]?.type).toBe('heading')
@@ -19,6 +137,13 @@ describe('should', () => {
       render: { color: false },
     })
     expect(out).toBe('Hello World\n\nThis is bold.\n')
+  })
+
+  it('exports highlight markdown options type', () => {
+    const options: HighlightMarkdownOptions = { render: { color: false } }
+    const out = highlightMarkdown('# Hello World\n', options)
+
+    expect(out).toContain('Hello World')
   })
 
   it('render diff code block highlights added/removed lines', () => {
@@ -41,6 +166,110 @@ describe('should', () => {
     expect(out).toContain('\u001B[31m-old')
     expect(out).toContain('\u001B[32m+new')
     expect(stripAnsi(out)).toContain('@@ -1,2 +1,2 @@')
+  })
+
+  it('render sanitizes terminal control sequences by default', () => {
+    const md = [
+      'hello \u001B]52;c;pw\u0007',
+      '',
+      '`x\u009B31m`',
+      '',
+      'controls \u0008\u009D\u007F',
+      '',
+      '```ts',
+      'console.log("\u001B[31m")',
+      '```',
+      '',
+    ].join('\n')
+
+    const out = highlightMarkdown(md, { render: { color: false } })
+
+    expect(out).not.toContain('\u001B')
+    expect(out).not.toContain('\u0007')
+    expect(out).not.toContain('\u009B')
+    expect(out).not.toContain('\u009D')
+    expect(out).not.toContain('\u0008')
+    expect(out).not.toContain('\u007F')
+    expect(out).toContain('hello ␛]52;c;pw␇')
+    expect(out).toContain('x␛[31m')
+    expect(out).toContain('controls ␈␟␡')
+    expect(out).toContain('console.log("␛[31m")')
+  })
+
+  it('render can opt into raw terminal control sequences', () => {
+    const out = highlightMarkdown('hello \u001B[31mred\n', {
+      render: { color: false, allowControlSequences: true },
+    })
+
+    expect(out).toContain('\u001B[31mred')
+  })
+
+  it('async render waits for async code highlight', async () => {
+    const out = await highlightMarkdownAsync('```ts\nconst x = 1\n```\n', {
+      render: {
+        color: false,
+        highlightCode: async code => `<<${code.toUpperCase()}>>`,
+      },
+    })
+
+    expect(out).toContain('<<CONST X = 1>>')
+  })
+
+  it('async render swallows async highlight rejection', async () => {
+    const errors: { error: unknown, code: string, language: string }[] = []
+    const out = await highlightMarkdownAsync('```ts\nconst x = 1\n```\n', {
+      render: {
+        color: false,
+        onHighlightError(error, code, language) {
+          errors.push({ code, error, language })
+        },
+        highlightCode: async () => {
+          throw new Error('boom')
+        },
+      },
+    })
+
+    expect(out).toContain('const x = 1')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.code).toBe('const x = 1')
+    expect(errors[0]?.language).toBe('ts')
+  })
+
+  it('async render swallows sync highlight throw', async () => {
+    const errors: { error: unknown, code: string, language: string }[] = []
+    const out = await highlightMarkdownAsync('```ts\nconst x = 1\n```\n', {
+      render: {
+        color: false,
+        onHighlightError(error, code, language) {
+          errors.push({ code, error, language })
+        },
+        highlightCode: () => {
+          throw new Error('boom')
+        },
+      },
+    })
+
+    expect(out).toContain('const x = 1')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.code).toBe('const x = 1')
+    expect(errors[0]?.language).toBe('ts')
+  })
+
+  it('shiki highlighter reports final fallback errors', async () => {
+    const errors: { error: unknown, code: string, language: string }[] = []
+    const highlightCode = createShikiHighlightCode({
+      theme: 'missing-theme' as any,
+      onError(error, code, language) {
+        errors.push({ code, error, language })
+      },
+    })
+
+    const out = await highlightCode('const x = 1', 'ts')
+
+    expect(out).toContain('const x = 1')
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.code).toBe('const x = 1')
+    expect(errors[0]?.language).toBe('ts')
   })
 
   it('render complex markdown (heading/blockquote/code/footnote/reference)', () => {
@@ -120,6 +349,20 @@ describe('should', () => {
     // Use `npm run demo:stream` in a real terminal to see the replacement.
   })
 
+  it('streaming: code block containing backticks still rewrites from opening fence', () => {
+    const r = createMarkdownStreamRenderer({
+      render: {
+        color: false,
+        highlightCode: code => `<<${code}>>`,
+      },
+    })
+
+    r.push('```ts\nconst s = "```"\n')
+    const patch = r.push('```')
+
+    expect(stripAnsi(patch)).toContain('```ts\n<<const s = "```">>\n```')
+  })
+
   it('streaming: redraw strategy rewrites from line 0', () => {
     const r = createMarkdownStreamRenderer({
       strategy: 'redraw',
@@ -187,6 +430,99 @@ describe('should', () => {
     expect(patches).toEqual(['\u001B8\u001B[u```ts\u001B[K\n<<CONST X = 1>>\u001B[K\n```\u001B[K\n\u001B[J'])
   })
 
+  it('streaming: tail async highlight is only scheduled once', async () => {
+    const highlight = deferred<string>()
+    let calls = 0
+    const r = createMarkdownStreamRenderer({
+      render: {
+        color: false,
+        highlightCode: () => {
+          calls += 1
+          return highlight.promise
+        },
+      },
+    })
+
+    r.push('```ts\nconst x = 1\n')
+    r.push('```')
+    r.push('\n\nafter\n')
+
+    expect(calls).toBe(1)
+    highlight.resolve('<<CONST X = 1>>')
+    const patches = await r.flush()
+    expect(patches.join('')).toContain('<<CONST X = 1>>')
+  })
+
+  it('streaming: reset ignores stale async highlight patches', async () => {
+    const highlight = deferred<string>()
+    const r = createMarkdownStreamRenderer({
+      render: {
+        color: false,
+        highlightCode: () => highlight.promise,
+      },
+    })
+
+    r.push('```ts\nconst x = 1\n')
+    r.push('```')
+    r.reset()
+    highlight.resolve('<<STALE>>')
+
+    await Promise.resolve()
+    expect(await r.flush()).toEqual([])
+    expect(r.getRenderedText()).toBe('')
+  })
+
+  it('streaming: reset clears full rendered text', () => {
+    const r = createMarkdownStreamRenderer({ render: { color: false } })
+
+    r.push('# Old\n')
+    r.reset()
+
+    expect(r.getRenderedText()).toBe('')
+    expect(r.getFullRenderedText()).toBe('')
+  })
+
+  it('streaming: async highlight rejection is swallowed', async () => {
+    const highlight = deferred<string>()
+    const errors: { error: unknown, code: string, language: string }[] = []
+    const r = createMarkdownStreamRenderer({
+      render: {
+        color: false,
+        onHighlightError(error, code, language) {
+          errors.push({ code, error, language })
+        },
+        highlightCode: () => highlight.promise,
+      },
+    })
+
+    r.push('```ts\nconst x = 1\n')
+    r.push('```')
+    highlight.reject(new Error('boom'))
+
+    await expect(r.flush()).resolves.toEqual([])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.code).toBe('const x = 1')
+    expect(errors[0]?.language).toBe('ts')
+  })
+
+  it('streaming: sync highlight throw is swallowed', async () => {
+    const r = createMarkdownStreamRenderer({
+      render: {
+        color: false,
+        highlightCode: () => {
+          throw new Error('boom')
+        },
+      },
+    })
+
+    expect(() => {
+      r.push('```ts\nconst x = 1\n')
+      r.push('```')
+    }).not.toThrow()
+
+    expect(r.getFullRenderedText()).toContain('const x = 1')
+  })
+
   it('streaming: async highlight works for non-tail code blocks', async () => {
     const r = createMarkdownStreamRenderer({
       render: {
@@ -202,6 +538,22 @@ describe('should', () => {
 
     const patches = await r.flush()
     expect(patches.join('')).toContain('<<CONST X = 1>>')
+  })
+
+  it('streaming: async highlight cache key uses sanitized code', async () => {
+    const r = createMarkdownStreamRenderer({
+      render: {
+        color: false,
+        highlightCode: async code => `<<${code}>>`,
+      },
+    })
+
+    r.push('```ts\nconsole.log("\u001B[31m")\n')
+    r.push('```')
+
+    const patches = await r.flush()
+    expect(patches.join('')).toContain('<<console.log("␛[31m")>>')
+    expect(r.getFullRenderedText()).not.toContain('\u001B')
   })
 
   it('streaming: viewportHeight clips rendered output', () => {
@@ -311,6 +663,36 @@ describe('should', () => {
     expect(out).toContain('<<CONST X = 1>>')
   })
 
+  it('streamMarkdownToTerminal: async highlight patch is written once', async () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: true,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    async function* chunks() {
+      yield '```ts\nconst x = 1\n'
+      yield '```\n'
+    }
+
+    await streamMarkdownToTerminal(chunks(), {
+      terminal: { stream },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: false,
+      render: {
+        color: false,
+        highlightCode: async code => `<<${code.toUpperCase()}>>`,
+      },
+    })
+
+    const out = written.join('')
+    const matches = out.match(/<<CONST X = 1>>/g) ?? []
+    expect(matches).toHaveLength(1)
+  })
+
   it('streamMarkdownToTerminal: finalOnly avoids streaming linefeeds', async () => {
     const written: string[] = []
     const stream = {
@@ -349,6 +731,33 @@ describe('should', () => {
 
     // Final output is printed at the end (with real newlines).
     expect(out).toContain('UNIQUE_FINAL_ONLY_TEST\n')
+  })
+
+  it('createTerminalMarkdownStream: reset does not print stale final output', () => {
+    const written: string[] = []
+    const stream = {
+      isTTY: true,
+      write(chunk: string) {
+        written.push(chunk)
+      },
+    }
+
+    const s = createTerminalMarkdownStream({
+      terminal: { stream, clear: false },
+      requireTTY: false,
+      startOnNewLine: false,
+      finalOnly: true,
+      loadingIndicator: false,
+      render: { color: false },
+    })
+
+    s.start()
+    s.push('# Old\n')
+    s.reset()
+    written.length = 0
+    s.stop()
+
+    expect(written.join('')).not.toContain('Old')
   })
 
   it('streamMarkdownToTerminal: loadingIndicator shows during streaming but not in final output', async () => {

@@ -3,9 +3,11 @@ import type { MarkdownIt, ParsedNode, ParseOptions } from 'stream-markdown-parse
 import type { RenderOptions } from './render'
 import { createAnchoredTextSurface, indexToPos, posToIndex } from 'markstream-terminal'
 import { getMarkdown, parseMarkdownToStructure } from 'stream-markdown-parser'
+import { callHighlight } from './highlight'
 import { findStreamingLoadingCodeBlock } from './markdown-node-utils'
 import { normalizeMarkdownInput } from './normalize-markdown-input'
 import { renderNodesToAnsi } from './render'
+import { sanitizeTerminalText } from './sanitize'
 
 export interface MarkdownStreamRendererOptions {
   md?: MarkdownIt
@@ -88,20 +90,26 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
   const fullRedrawOnMismatch = options.fullRedrawOnMismatch ?? true
   const highlightFn = renderOptions?.highlightCode
   const rewriteOnCodeComplete = Boolean(highlightFn)
+  const allowControlSequences = Boolean(renderOptions?.allowControlSequences)
 
   let content = ''
   let lastCodeWasLoading = false
   let codeStartPos: TerminalPos | null = null
   const surface = createAnchoredTextSurface({ anchor })
   let lastFullRendered = ''
+  let generation = 0
 
   const highlightCache = new Map<string, string>()
   const inflightHighlights = new Map<string, Promise<void>>()
   const pending = new Set<Promise<void>>()
   let patchQueue: string[] = []
 
-  function highlightKey(code: string, language: string) {
+  function highlightKeyFromInput(code: string, language: string) {
     return `${language}\u0000${code.replace(/\n$/, '')}`
+  }
+
+  function highlightSource(code: string) {
+    return allowControlSequences ? code : sanitizeTerminalText(code)
   }
 
   function emitPatch(patch: string) {
@@ -123,18 +131,61 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
 
   function renderAll(nodes: ParsedNode[]) {
     const cachedHighlight = highlightFn
-      ? (code: string, language: string) => highlightCache.get(highlightKey(code, language))
+      ? (code: string, language: string) => highlightCache.get(highlightKeyFromInput(code, language))
       : undefined
     const full = renderNodesToAnsi(nodes, { ...renderOptions, streaming: true, highlightCode: cachedHighlight as any })
     lastFullRendered = full
     return typeof viewportHeight === 'number' ? tailLines(full, viewportHeight) : full
   }
 
+  function runHighlightOnce(key: string, code: string, language: string, onHighlighted?: () => void) {
+    if (!highlightFn)
+      return undefined
+
+    if (highlightCache.has(key))
+      return highlightCache.get(key)
+
+    const existing = inflightHighlights.get(key)
+    if (existing)
+      return existing
+
+    const highlight = highlightFn!
+    const gen = generation
+    const res = callHighlight(highlight, code, language, renderOptions?.onHighlightError)
+
+    if (typeof res === 'string') {
+      highlightCache.set(key, res)
+      return res
+    }
+
+    if (res instanceof Promise) {
+      const task = res.then((highlighted) => {
+        if (gen !== generation)
+          return
+        if (highlighted == null)
+          return
+
+        highlightCache.set(key, highlighted)
+        onHighlighted?.()
+      }).catch(() => {
+        // ignore highlight failures
+      }).finally(() => {
+        if (inflightHighlights.get(key) === task)
+          inflightHighlights.delete(key)
+      })
+
+      inflightHighlights.set(key, task)
+      pending.add(task)
+      void task.finally(() => pending.delete(task))
+      return task
+    }
+
+    return undefined
+  }
+
   function scheduleHighlights(nodes: ParsedNode[], skipKey?: string) {
     if (!highlightFn)
       return
-
-    const highlight = highlightFn!
 
     const streamingLoading = findStreamingLoadingCodeBlock(nodes)
 
@@ -150,37 +201,17 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
 
         const code = String(node.code ?? '').replace(/\n$/, '')
         const language = String(node.language ?? '')
-        const key = highlightKey(code, language)
+        const input = highlightSource(code)
+        const key = highlightKeyFromInput(input, language)
 
         if (skipKey && key === skipKey)
           return
 
-        if (highlightCache.has(key) || inflightHighlights.has(key))
-          return
-
-        const res = highlight(code, language)
-        if (typeof res === 'string') {
-          highlightCache.set(key, res)
-          return
-        }
-
-        if (res instanceof Promise) {
-          const task = res.then((highlighted) => {
-            highlightCache.set(key, highlighted)
-
-            const nodesNow = parseMarkdownToStructure(normalizeMarkdownInput(content), md, parseOptions)
-            const nextRendered = renderAll(nodesNow)
-            emitPatch(surface.setText(nextRendered))
-          }).catch(() => {
-            // ignore highlight failures
-          }).finally(() => {
-            inflightHighlights.delete(key)
-          })
-
-          inflightHighlights.set(key, task)
-          pending.add(task)
-          void task.finally(() => pending.delete(task))
-        }
+        runHighlightOnce(key, input, language, () => {
+          const nodesNow = parseMarkdownToStructure(normalizeMarkdownInput(content), md, parseOptions)
+          const nextRendered = renderAll(nodesNow)
+          emitPatch(surface.setText(nextRendered))
+        })
         return
       }
 
@@ -226,7 +257,8 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
         const node = lastNode as any
         const code = String(node.code ?? '').replace(/\n$/, '')
         const language = String(node.language ?? '')
-        skipHighlightKey = highlightKey(code, language)
+        const input = highlightSource(code)
+        skipHighlightKey = highlightKeyFromInput(input, language)
       }
 
       scheduleHighlights(nodes, skipHighlightKey)
@@ -234,16 +266,37 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
       // If the last node is a code block that just completed, precompute highlight:
       // - sync highlight => cache now and do an in-place rewrite immediately
       // - async highlight => render without highlight now (append-only), then rewrite later
-      let completedCodeHighlight: string | Promise<string> | undefined
-      let completedCodeKey: string | undefined
+      let completedCodeHighlight: string | Promise<void> | undefined
       if (rewriteOnCodeComplete && isCode && !isLoading && prevCodeWasLoading) {
         const node = lastNode as any
         const code = String(node.code ?? '').replace(/\n$/, '')
         const language = String(node.language ?? '')
-        completedCodeKey = highlightKey(code, language)
-        completedCodeHighlight = highlightFn?.(code, language)
-        if (typeof completedCodeHighlight === 'string')
-          highlightCache.set(completedCodeKey, completedCodeHighlight)
+        const startPos = codeStartPos
+        const input = highlightSource(code)
+        const completedCodeKey = highlightKeyFromInput(input, language)
+        completedCodeHighlight = runHighlightOnce(completedCodeKey, input, language, () => {
+          const nodesNow = parseMarkdownToStructure(normalizeMarkdownInput(content), md, parseOptions)
+          const nextRendered = renderAll(nodesNow)
+
+          if (strategy === 'redraw') {
+            emitPatch(surface.setText(nextRendered))
+            return
+          }
+
+          if (!startPos) {
+            emitPatch(surface.setText(nextRendered))
+            return
+          }
+
+          const currentRendered = surface.getText()
+          const startIndexPrev = posToIndex(currentRendered, startPos)
+          if (nextRendered.slice(0, startIndexPrev) !== currentRendered.slice(0, startIndexPrev)) {
+            emitPatch(surface.setText(nextRendered))
+            return
+          }
+
+          emitPatch(surface.setTextFrom(nextRendered, startPos))
+        })
       }
 
       const rendered = renderAll(nodes)
@@ -251,7 +304,9 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
       if (isCode && isLoading) {
         lastCodeWasLoading = true
         if (!prevCodeWasLoading) {
-          const startIndex = findLastFenceLineStart(rendered)
+          const startIndex = rendered.startsWith(prevRendered)
+            ? prevRendered.length
+            : findLastFenceLineStart(rendered)
           codeStartPos = (strategy === 'redraw' || startIndex == null) ? null : indexToPos(rendered, startIndex)
         }
       }
@@ -292,38 +347,7 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
         && completedCodeHighlight instanceof Promise
       ) {
         lastCodeWasLoading = false
-        const startPos = codeStartPos
         codeStartPos = null
-        const key = completedCodeKey!
-
-        const task = completedCodeHighlight.then((highlighted) => {
-          highlightCache.set(key, highlighted)
-
-          const nodesNow = parseMarkdownToStructure(normalizeMarkdownInput(content), md, parseOptions)
-          const nextRendered = renderAll(nodesNow)
-
-          if (strategy === 'redraw') {
-            emitPatch(surface.setText(nextRendered))
-            return
-          }
-
-          if (!startPos) {
-            emitPatch(surface.setText(nextRendered))
-            return
-          }
-
-          const currentRendered = surface.getText()
-          const startIndexPrev = posToIndex(currentRendered, startPos)
-          if (nextRendered.slice(0, startIndexPrev) !== currentRendered.slice(0, startIndexPrev)) {
-            emitPatch(surface.setText(nextRendered))
-            return
-          }
-
-          emitPatch(surface.setTextFrom(nextRendered, startPos))
-        })
-
-        pending.add(task)
-        void task.finally(() => pending.delete(task))
       }
       else {
         lastCodeWasLoading = false
@@ -349,10 +373,14 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
       return out
     },
     reset() {
+      generation += 1
       content = ''
+      lastFullRendered = ''
       lastCodeWasLoading = false
       codeStartPos = null
       highlightCache.clear()
+      inflightHighlights.clear()
+      pending.clear()
       patchQueue = []
       surface.setText('')
     },

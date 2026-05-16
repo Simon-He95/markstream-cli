@@ -21,6 +21,9 @@
     "dist",
     "src"
   ],
+  "engines": {
+    "node": ">=18.18"
+  },
   "scripts": {
     "build": "tsdown",
     "dev": "npm run build -- --watch src",
