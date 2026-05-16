@@ -50,14 +50,14 @@ function parseArgs(args) {
     else if (arg === '--no-final-only') {
       options.finalOnly = false
     }
-    else if (arg === '--theme') {
-      const raw = args[++i]
+    else if (arg === '--theme' || arg.startsWith('--theme=')) {
+      const raw = arg === '--theme' ? args[++i] : arg.slice('--theme='.length)
       if (!raw || raw.startsWith('-'))
         return fail('Missing value for --theme')
       options.theme = raw
     }
-    else if (arg === '--width') {
-      const raw = args[++i]
+    else if (arg === '--width' || arg.startsWith('--width=')) {
+      const raw = arg === '--width' ? args[++i] : arg.slice('--width='.length)
       const width = Number(raw)
       if (!Number.isInteger(width) || width <= 0)
         return fail('Missing valid positive integer for --width')

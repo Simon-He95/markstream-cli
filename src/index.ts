@@ -2,6 +2,7 @@ import type { MarkdownIt, ParsedNode, ParseOptions } from 'stream-markdown-parse
 import type { RenderOptions } from './render'
 import type { MarkdownStreamRenderer, MarkdownStreamRendererOptions } from './stream'
 import { getMarkdown, parseMarkdownToStructure } from 'stream-markdown-parser'
+import { callHighlight } from './highlight'
 import { normalizeMarkdownInput } from './normalize-markdown-input'
 import { renderNodesToAnsi } from './render'
 import { createShikiHighlightCode } from './shiki-highlight'
@@ -11,7 +12,7 @@ import { createTerminalMarkdownStream } from './terminal-markdown-stream'
 
 export type { ShikiHighlightOptions } from './shiki-highlight'
 
-interface HighlightMarkdownOptions {
+export interface HighlightMarkdownOptions {
   parse?: ParseOptions
   render?: RenderOptions
   md?: MarkdownIt
@@ -59,7 +60,7 @@ export async function highlightMarkdownAsync(
     if (inflight.has(key))
       return undefined
 
-    const highlighted = highlightCode(code, language)
+    const highlighted = callHighlight(highlightCode, code, language)
     if (typeof highlighted === 'string') {
       cache.set(key, highlighted)
       return highlighted

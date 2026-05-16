@@ -3,6 +3,7 @@ import type { MarkdownIt, ParsedNode, ParseOptions } from 'stream-markdown-parse
 import type { RenderOptions } from './render'
 import { createAnchoredTextSurface, indexToPos, posToIndex } from 'markstream-terminal'
 import { getMarkdown, parseMarkdownToStructure } from 'stream-markdown-parser'
+import { callHighlight } from './highlight'
 import { findStreamingLoadingCodeBlock } from './markdown-node-utils'
 import { normalizeMarkdownInput } from './normalize-markdown-input'
 import { renderNodesToAnsi } from './render'
@@ -150,7 +151,7 @@ export function createMarkdownStreamRenderer(options: MarkdownStreamRendererOpti
 
     const highlight = highlightFn!
     const gen = generation
-    const res = highlight(code, language)
+    const res = callHighlight(highlight, code, language)
 
     if (typeof res === 'string') {
       highlightCache.set(key, res)

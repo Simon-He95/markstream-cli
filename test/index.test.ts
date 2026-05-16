@@ -1,3 +1,4 @@
+import type { HighlightMarkdownOptions } from '../src/index'
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -75,6 +76,16 @@ describe('should', () => {
     expect(result.stdout).toContain('\u001B[')
   })
 
+  it('cli accepts equals option values', () => {
+    const result = spawnSync(process.execPath, [cliPath, '--theme=nord', '--width=80'], {
+      encoding: 'utf8',
+      input: '```ts\nconst x = 1\n```\n',
+    })
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('\u001B[')
+  })
+
   it('parse markdown to nodes', () => {
     const nodes = parseMarkdown('# Hello World')
     expect(nodes[0]?.type).toBe('heading')
@@ -86,6 +97,13 @@ describe('should', () => {
       render: { color: false },
     })
     expect(out).toBe('Hello World\n\nThis is bold.\n')
+  })
+
+  it('exports highlight markdown options type', () => {
+    const options: HighlightMarkdownOptions = { render: { color: false } }
+    const out = highlightMarkdown('# Hello World\n', options)
+
+    expect(out).toContain('Hello World')
   })
 
   it('render diff code block highlights added/removed lines', () => {
@@ -162,6 +180,19 @@ describe('should', () => {
       render: {
         color: false,
         highlightCode: async () => {
+          throw new Error('boom')
+        },
+      },
+    })
+
+    expect(out).toContain('const x = 1')
+  })
+
+  it('async render swallows sync highlight throw', async () => {
+    const out = await highlightMarkdownAsync('```ts\nconst x = 1\n```\n', {
+      render: {
+        color: false,
+        highlightCode: () => {
           throw new Error('boom')
         },
       },
@@ -370,6 +401,24 @@ describe('should', () => {
     highlight.reject(new Error('boom'))
 
     await expect(r.flush()).resolves.toEqual([])
+  })
+
+  it('streaming: sync highlight throw is swallowed', async () => {
+    const r = createMarkdownStreamRenderer({
+      render: {
+        color: false,
+        highlightCode: () => {
+          throw new Error('boom')
+        },
+      },
+    })
+
+    expect(() => {
+      r.push('```ts\nconst x = 1\n')
+      r.push('```')
+    }).not.toThrow()
+
+    expect(r.getFullRenderedText()).toContain('const x = 1')
   })
 
   it('streaming: async highlight works for non-tail code blocks', async () => {
