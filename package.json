@@ -29,7 +29,7 @@
       "require": "./dist/index.cjs"
     }
   },
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "typesVersions": {
@@ -56,7 +56,7 @@
     "format": "prettier --cache --write .",
     "lint": "eslint . --cache",
     "lint:fix": "pnpm run lint --fix",
-    "prepublishOnly": "pnpm -r --filter markstream-terminal --filter . run build && pnpm -r --filter markstream-terminal --filter . --if-present run test && pnpm -r --filter markstream-terminal --filter . run typecheck",
+    "prepublishOnly": "pnpm -r --include-workspace-root --filter markstream-terminal --filter . run build && pnpm -r --include-workspace-root --filter markstream-terminal --filter . --if-present run test && pnpm -r --include-workspace-root --filter markstream-terminal --filter . run typecheck",
     "release": "bumpp package.json packages/terminal/package.json && pnpm publish -r --filter markstream-terminal --filter . --access public",
     "start": "esno src/index.ts",
     "test": "pnpm run build:terminal && pnpm run build && vitest run",
@@ -66,7 +66,7 @@
     "demo:replace": "tsx scripts/demo-replace.ts",
     "demo:highlight-md": "tsx scripts/demo-highlight-markdown-stream.ts",
     "demo:all-color": "tsx scripts/demo-all-syntax-color-stream.ts",
-    "build:terminal": "npm --prefix packages/terminal run build"
+    "build:terminal": "pnpm --dir packages/terminal run build"
   },
   "dependencies": {
     "@shikijs/vscode-textmate": "^10.0.2",

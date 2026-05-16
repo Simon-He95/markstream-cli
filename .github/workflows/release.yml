@@ -32,6 +32,7 @@ jobs:
       - run: |
           pnpm --dir packages/terminal run build
           pnpm run build
+      - run: pnpm run prepublishOnly
       - run: pnpm publish -r --filter markstream-terminal --filter . --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
